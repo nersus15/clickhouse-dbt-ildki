@@ -83,18 +83,28 @@ Sebelumnya CDC pakai Apache Flink (PostgreSQL -> StarRocks) yang dinilai terlalu
                 ├── res_link.sql         ┘
                 │
                 ├── kpi_totals.sql                    ┐
-                ├── encounter_class.sql                │
-                ├── resource_daily_growth.sql          │
-                ├── top_diagnosis.sql                  │ materialized: table
-                ├── penyakit_prioritas_trend.sql       │ (agregasi/join, full rebuild tiap dbt run,
-                ├── utilisasi_faskes.sql               │  1 model = 1 chart Superset, dibaca langsung
-                ├── encounter_trend_per_faskes.sql     │  sebagai tabel -- tidak ada view lagi)
-                ├── deteksi_dini_hipertensi.sql        │
-                ├── tren_tensi_harian.sql              │
-                └── weight_faltering_per_faskes.sql    ┘
+                ├── encounter_class.sql                 │
+                ├── resource_daily_growth.sql           │
+                ├── top_diagnosis.sql                   │ materialized: table
+                ├── penyakit_prioritas_trend.sql        │ (agregasi/join, full rebuild tiap dbt run,
+                ├── utilisasi_faskes.sql                │  1 model = 1 chart Superset, dibaca langsung
+                ├── encounter_trend_per_faskes.sql      │  sebagai tabel -- tidak ada view lagi)
+                ├── deteksi_dini_hipertensi.sql         │
+                ├── tren_tensi_harian.sql               │
+                ├── weight_faltering_per_faskes.sql     │
+                ├── resource_type_summary.sql           │  ARSIP -- tidak tampil di dashboard utama,
+                └── clinical_status_summary.sql         ┘  cuma referensi teknis (lihat bagian Dashboard)
 ```
 
 > Folder `models/marts/` masih ada secara fisik (cuma berisi `schema.yml` kosong/placeholder) karena tool yang dipakai membangun project ini tidak punya kapabilitas hapus file — aman diabaikan, tidak dipakai dbt.
+
+### Status di dashboard Superset (per model agregasi)
+
+| Model | Tampil di dashboard? |
+|---|---|
+| `kpi_totals`, `resource_daily_growth`, `top_diagnosis`, `penyakit_prioritas_trend`, `utilisasi_faskes`, `encounter_trend_per_faskes`, `deteksi_dini_hipertensi`, `tren_tensi_harian`, `weight_faltering_per_faskes` | ✅ Ya (9 chart) |
+| `encounter_class` | ❌ Sudah dikeluarkan dari dashboard (dianggap kurang relevan/tidak cocok) -- model & dataset Superset-nya tetap ada, cuma tidak ditampilkan |
+| `resource_type_summary`, `clinical_status_summary` | ❌ Arsip/referensi teknis saja, tidak pernah ditampilkan di dashboard kebijakan utama (dari awal dianggap terlalu teknis untuk audiens pejabat/tenaga medis) |
 
 Mapping tiap model ke chart Superset ada di komentar `-- Chart: "..."` pada masing-masing file `.sql`, dan di dokumentasi dashboard (`~/project/ildki/dashboard/superset/dashboard_documentation.md` — catatan: dokumen itu masih pakai nama lama `stg_*`/`mart_*`, perlu di-update menyesuaikan).
 
@@ -147,8 +157,8 @@ def run_dbt_transformation():
 
 ## Catatan Penting / TODO
 
-- **Database `silver` sudah dikosongkan total** (semua `stg_*`/`mart_*` versi lama sudah di-`DROP` manual). `dbt run`/`dbt build` berikutnya akan mulai dari kondisi bersih -- run pertama otomatis full build untuk semua model (termasuk yang `incremental`, karena belum ada watermark pembanding). **Update dataset Superset** ke nama tabel baru tanpa prefix (mis. `silver.top_diagnosis`) begitu model-model ini selesai ter-build.
-- **Belum divalidasi eksekusi end-to-end setelah restrukturisasi + incremental ini** (`dbt run`/`dbt build` belum sempat dijalankan langsung). Wajib jalankan `dbt debug` lalu `dbt build` dulu sebagai validasi sebelum dipakai produksi -- terutama untuk memastikan config `engine`/`order_by`/`is_incremental()` diterima dbt-clickhouse tanpa error, dan privilege `INSERT`/`ALTER` sudah di-grant (lihat "Prasyarat").
+- **Sudah divalidasi eksekusi end-to-end** -- `dbt build --select staging+` berhasil membangun seluruh 17 model (8 ekstraksi + 9 chart aktif) ke database `silver`, dan seluruh chart di dashboard Superset sudah dialihkan ke dataset ClickHouse ini (bukan StarRocks lagi). Dua model tambahan (`resource_type_summary`, `clinical_status_summary`) untuk chart arsip juga sudah dibuatkan tabelnya secara manual di ClickHouse (lihat catatan berikutnya) -- akan otomatis ter-build ulang oleh dbt begitu file-nya di-commit & job Prefect jalan lagi.
+- **`resource_type_summary` & `clinical_status_summary` sempat dibuat manual langsung di ClickHouse** (bukan lewat `dbt run`) supaya dataset Superset-nya bisa langsung dipakai tanpa nunggu commit+deploy. Begitu file dbt-nya (`resource_type_summary.sql`, `clinical_status_summary.sql`) sudah di-commit ke repo dan job Prefect jalan, dbt akan `CREATE OR REPLACE TABLE` ulang -- idempotent, aman, tidak perlu tindakan tambahan.
 - Ambang klasifikasi di `deteksi_dini_hipertensi.sql` (>=140/90 dan >=130/85) berdasarkan **satu kali pengukuran** — bukan pengganti penegakan diagnosis klinis.
 - `dbt_runner.py` sengaja **tidak** nge-log `CLICKHOUSE_PASSWORD` ke output (beda dari versi StarRocks lama yang nge-log `STARROCKS_PASS` — sebaiknya dihindari untuk keamanan).
 - **Jangan pakai `res_deleted_at IS NULL` atau kolom `*_at`/`*_deleted` lain dengan asumsi Nullable** di model manapun -- cek dulu tipe kolomnya di ClickHouse (`DESCRIBE TABLE ...`), karena hasil CDC PeerDB dari Postgres sering mengubah kolom Nullable jadi non-Nullable dengan nilai default/epoch.

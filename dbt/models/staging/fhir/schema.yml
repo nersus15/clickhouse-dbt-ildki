@@ -42,7 +42,7 @@ models:
   - name: kpi_totals
     description: "Chart: KPI Kebijakan Kesehatan"
   - name: encounter_class
-    description: "Chart: Distribusi Kelas Encounter"
+    description: "Chart: Distribusi Kelas Encounter (ARSIP -- sudah dikeluarkan dari dashboard utama, dianggap kurang relevan)"
   - name: resource_daily_growth
     description: "Chart: Tren Ingest Resource Harian per Tipe"
   - name: top_diagnosis
@@ -59,3 +59,7 @@ models:
     description: "Chart: Tren Rata-rata Tekanan Darah Harian (Sistol/Diastol)"
   - name: weight_faltering_per_faskes
     description: "Chart: Tren Kasus Weight Faltering (Risiko Stunting) per Puskesmas"
+  - name: resource_type_summary
+    description: "Chart: Distribusi Resource FHIR per Tipe (ARSIP -- referensi teknis, tidak ditampilkan di dashboard kebijakan utama)"
+  - name: clinical_status_summary
+    description: "Chart: Breakdown Status Klinis per Resource Type (ARSIP -- referensi teknis, tidak ditampilkan di dashboard kebijakan utama; sumber langsung dari bronze hfj_spidx_token)"
