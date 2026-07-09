@@ -9,7 +9,7 @@ WITH fhir_resources AS (
         fhir_id AS patient_id, 
         res_type,
         res_deleted_at
-    FROM {{ source('hapi_fhir', 'hfj_resource') }}
+    FROM {{ source('fhirhapi_prod', 'hfj_resource') }}
     WHERE res_type = 'Patient' 
       AND res_deleted_at IS NULL
 ),
@@ -23,7 +23,7 @@ fhir_encounters AS (
            biasanya kita mengekstrak token/string referensi dari kolom naratif/clob (res_text/res_encoding)
            atau hfj_res_link. Di bawah ini disimulasikan menggunakan tabel hfj_res_link.
         */
-    FROM {{ source('hapi_fhir', 'hfj_resource') }}
+    FROM {{ source('fhirhapi_prod', 'hfj_resource') }}
     WHERE res_type = 'Encounter'
       AND res_deleted_at IS NULL
 ),
@@ -32,7 +32,7 @@ resource_links AS (
     SELECT 
         src_resource_id, -- Ini akan mengarah ke Encounter ID
         target_resource_id -- Ini akan mengarah ke Patient ID
-    FROM {{ source('hapi_fhir', 'hfj_res_link') }}
+    FROM {{ source('fhirhapi_prod', 'hfj_res_link') }}
     WHERE src_path = 'Encounter.subject' -- Menandakan subjek dari encounter adalah Patient
 )
 

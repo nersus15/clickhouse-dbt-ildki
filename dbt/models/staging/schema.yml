@@ -20,6 +20,8 @@ sources:
         description: "Indeks search parameter FHIR bertipe token (status, class, code)"
 
 models:
+  - name: stg_patients
+    description: "Patient dan Encounter"
   - name: stg_resource
     description: "Metadata resource yang sudah dibersihkan (dedup CDC + normalisasi status hapus)"
   - name: stg_organizations
