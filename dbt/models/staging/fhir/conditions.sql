@@ -1,5 +1,6 @@
 {{ config(
     materialized='incremental',
+    incremental_strategy='append',
     alias='conditions',
     engine="ReplacingMergeTree(res_updated)",
     order_by=['condition_id']

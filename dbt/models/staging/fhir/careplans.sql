@@ -1,5 +1,6 @@
 {{ config(
     materialized='incremental',
+    incremental_strategy='append',
     alias='careplans',
     engine="ReplacingMergeTree(res_updated)",
     order_by=['careplan_id']

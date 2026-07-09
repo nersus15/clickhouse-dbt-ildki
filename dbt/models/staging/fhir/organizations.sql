@@ -1,5 +1,6 @@
 {{ config(
     materialized='incremental',
+    incremental_strategy='append',
     alias='organizations',
     engine="ReplacingMergeTree(res_updated)",
     order_by=['organization_id']

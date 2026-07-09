@@ -12,6 +12,14 @@
 -- CATATAN 1: dipakai IN (subquery tidak berkorelasi), BUKAN correlated EXISTS -- ClickHouse
 -- tidak mendukung correlated subquery dengan baik.
 -- CATATAN 2: observations & conditions materialized='incremental' -- WAJIB FINAL.
+-- CATATAN 3 (edge case, BUKAN error): kondisi "sistol >= 140 OR diastol >= 90" bisa hasilkan
+-- NULL (bukan TRUE/FALSE) kalau salah satu dari sistol/diastol NULL dan yang lain di bawah
+-- ambang -- CASE WHEN akan skip ke baris berikutnya (perilaku standar SQL untuk NULL di WHEN).
+-- Dampaknya: pasien yang cuma punya SATU dari dua angka tensi (jarang, tapi mungkin) bisa
+-- ke-klasifikasi 'Normal' padahal semestinya masuk kategori lebih tinggi kalau angka yang
+-- hilang itu diisi. Belum diperbaiki karena data saat ini selalu punya sistol+diastol lengkap
+-- (sudah divalidasi ke ClickHouse langsung) -- kalau nanti sumber data lain punya pola
+-- pengukuran tunggal, logic ini perlu ditinjau ulang (mis. pakai coalesce yang lebih eksplisit).
 
 WITH bp_reading AS (
     SELECT

@@ -1,5 +1,6 @@
 {{ config(
     materialized='incremental',
+    incremental_strategy='append',
     alias='res_link',
     engine="ReplacingMergeTree(sp_updated)",
     order_by=['source_resource_type', 'src_path', 'src_resource_id', 'target_resource_type', 'target_resource_id']
