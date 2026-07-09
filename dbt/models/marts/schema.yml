@@ -1,23 +1,5 @@
+# Folder marts/ SUDAH TIDAK DIPAKAI -- semua model dipindah ke models/staging/fhir/
+# (lihat readme.md, bagian "Struktur Proyek"). File ini sengaja dibiarkan minimal/kosong
+# (bukan dihapus, tool yang dipakai tidak punya kapabilitas delete file) supaya tidak
+# ikut ke-parse dbt sebagai properties file yang mengacu ke model yang sudah tidak ada.
 version: 2
-
-models:
-  - name: mart_kpi_totals
-    description: "Chart: KPI Kebijakan Kesehatan"
-  - name: mart_encounter_class
-    description: "Chart: Distribusi Kelas Encounter"
-  - name: mart_resource_daily_growth
-    description: "Chart: Tren Ingest Resource Harian per Tipe"
-  - name: mart_top_diagnosis
-    description: "Chart: 10 Besar Penyakit (Diagnosis Terbanyak)"
-  - name: mart_penyakit_prioritas_trend
-    description: "Chart: Tren Kasus Hipertensi & Diabetes Melitus"
-  - name: mart_utilisasi_faskes
-    description: "Chart: Utilisasi Layanan per Puskesmas"
-  - name: mart_encounter_trend_per_faskes
-    description: "Chart: Tren Pengiriman Data Kunjungan (Encounter) per Puskesmas"
-  - name: mart_deteksi_dini_hipertensi
-    description: "Chart: Deteksi Dini Risiko Hipertensi (Observasi vs Diagnosis Formal)"
-  - name: mart_tren_tensi_harian
-    description: "Chart: Tren Rata-rata Tekanan Darah Harian (Sistol/Diastol)"
-  - name: mart_weight_faltering_per_faskes
-    description: "Chart: Tren Kasus Weight Faltering (Risiko Stunting) per Puskesmas"

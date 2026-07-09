@@ -1,0 +1,61 @@
+version: 2
+
+sources:
+  - name: fhirhapi_prod
+    # Layer BRONZE: hasil CDC PeerDB dari PostgreSQL (skema internal HAPI FHIR JPA server, FHIR R4)
+    # Semua nama tabel fisik di ClickHouse punya prefix "public_" (nama schema Postgres asal).
+    database: fhirhapi_prod
+    tables:
+      - name: hfj_resource
+        identifier: public_hfj_resource
+        description: "Metadata tiap resource FHIR (tipe, tanggal publish/update, status hapus)"
+      - name: hfj_res_ver
+        identifier: public_hfj_res_ver
+        description: "Isi JSON lengkap tiap resource per versi (kolom res_text_vc)"
+      - name: hfj_res_link
+        identifier: public_hfj_res_link
+        description: "Relasi antar-resource FHIR (mis. Encounter.serviceProvider -> Organization)"
+      - name: hfj_spidx_token
+        identifier: public_hfj_spidx_token
+        description: "Indeks search parameter FHIR bertipe token (status, class, code)"
+
+models:
+  # --- Ekstraksi 1:1 dari bronze (materialized: table) ---
+  - name: patients
+    description: "Pasien (Patient) beserta encounter terkait (kalau ada), dari relasi Encounter.subject"
+  - name: resource
+    description: "Metadata resource yang sudah dibersihkan (dedup CDC + normalisasi status hapus)"
+  - name: organizations
+    description: "Daftar Puskesmas/faskes (Organization) dengan nama bersih"
+  - name: encounters
+    description: "Kunjungan (Encounter) dengan status & kelas layanan terekstrak dari JSON"
+  - name: conditions
+    description: "Diagnosis (Condition) dengan kode & nama ICD-10 terekstrak dari JSON"
+  - name: observations
+    description: "Hasil pengukuran vital sign (Observation) terekstrak dari JSON"
+  - name: careplans
+    description: "Rencana perawatan (CarePlan) dengan kategori & status terekstrak dari JSON"
+  - name: res_link
+    description: "Relasi antar-resource, dipakai untuk join di model agregasi (menghindari join berulang ke bronze)"
+
+  # --- Agregasi/join, langsung dipakai chart Superset (materialized: view) ---
+  - name: kpi_totals
+    description: "Chart: KPI Kebijakan Kesehatan"
+  - name: encounter_class
+    description: "Chart: Distribusi Kelas Encounter"
+  - name: resource_daily_growth
+    description: "Chart: Tren Ingest Resource Harian per Tipe"
+  - name: top_diagnosis
+    description: "Chart: 10 Besar Penyakit (Diagnosis Terbanyak)"
+  - name: penyakit_prioritas_trend
+    description: "Chart: Tren Kasus Hipertensi & Diabetes Melitus"
+  - name: utilisasi_faskes
+    description: "Chart: Utilisasi Layanan per Puskesmas"
+  - name: encounter_trend_per_faskes
+    description: "Chart: Tren Pengiriman Data Kunjungan (Encounter) per Puskesmas"
+  - name: deteksi_dini_hipertensi
+    description: "Chart: Deteksi Dini Risiko Hipertensi (Observasi vs Diagnosis Formal)"
+  - name: tren_tensi_harian
+    description: "Chart: Tren Rata-rata Tekanan Darah Harian (Sistol/Diastol)"
+  - name: weight_faltering_per_faskes
+    description: "Chart: Tren Kasus Weight Faltering (Risiko Stunting) per Puskesmas"

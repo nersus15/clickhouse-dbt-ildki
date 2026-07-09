@@ -20,20 +20,22 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-# Konfigurasi materialisasi model
-# CATATAN: schema default (database tujuan) sudah di-set ke 'silver' lewat profiles.yml
-# (CLICKHOUSE_DATABASE). Jangan tambahkan +schema di sini lagi -- kalau di-override,
-# dbt akan membuat nama database 'silver_silver' (perilaku default generate_schema_name dbt).
+# CATATAN ARSITEKTUR (bronze -> silver -> gold):
+# Semua model (baik ekstraksi 1:1 dari bronze maupun agregasi/join untuk chart Superset) ada
+# dalam SATU folder models/staging/{aplikasi}/ -- untuk sekarang cuma models/staging/fhir/ --
+# dan sama-sama ditulis ke database ClickHouse 'silver' (schema default dari profiles.yml /
+# CLICKHOUSE_DATABASE). TIDAK ADA prefix stg_/mart_ pada nama tabel/view -- nama view sudah
+# cukup jelas dari nama modelnya sendiri (mis. "conditions", "top_diagnosis").
+#
+# Materialized TIDAK di-set di level folder di sini, tapi eksplisit per-model lewat config()
+# di tiap file .sql (opsi C -- lihat readme.md):
+# - Model ekstraksi (mis. resource, conditions, observations) -> materialized='table'
+#   (dedup FINAL + ekstraksi JSON dihitung sekali saat dbt run, bukan tiap kali chart dibuka)
+# - Model agregasi/join untuk chart (mis. top_diagnosis, kpi_totals) -> materialized='view'
+#   (murah karena sumbernya sudah berupa table bersih, bukan bronze mentah)
+#
+# Layer GOLD BELUM dipakai: rencananya gold baru dibuat nanti saat sudah perlu menggabungkan
+# data dari lebih dari satu source aplikasi (mis. FHIR + Jaksimpus dkk). Macro
+# macros/generate_schema_name.sql sudah disiapkan untuk saat itu tiba.
 models:
-  ildki_transformations_ch:
-    # Layer SILVER - staging: ekstraksi & pembersihan 1:1 dari tabel bronze (fhirhapi_prod.public_hfj_*)
-    # Materialized sebagai VIEW: ringan, selalu live mengikuti data bronze, tidak butuh storage tambahan
-    staging:
-      +materialized: view
-
-    # Layer SILVER - marts: hasil agregasi/join yang langsung dipakai chart Superset
-    # Materialized sebagai VIEW dulu (paling aman & tanpa perlu konfigurasi engine/order_by).
-    # Kalau nanti volume data besar dan butuh performa lebih, bisa diubah ke materialized='table'
-    # dengan tambahan config engine (mis. 'MergeTree()') + order_by di tiap model .sql.
-    marts:
-      +materialized: view
+  ildki_transformations_ch: {}

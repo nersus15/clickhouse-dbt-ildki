@@ -1,4 +1,9 @@
-{{ config(materialized='view', alias='stg_encounters') }}
+{{ config(
+    materialized='table',
+    alias='encounters',
+    engine='MergeTree()',
+    order_by=['encounter_id']
+) }}
 
 -- Layer SILVER: kunjungan (Encounter) dengan status & kelas layanan terekstrak dari JSON.
 SELECT

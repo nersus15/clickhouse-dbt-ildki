@@ -1,4 +1,9 @@
-{{ config(materialized='view', alias='stg_careplans') }}
+{{ config(
+    materialized='table',
+    alias='careplans',
+    engine='MergeTree()',
+    order_by=['careplan_id']
+) }}
 
 -- Layer SILVER: rencana perawatan (CarePlan) -- termasuk program weight faltering/risiko stunting.
 SELECT

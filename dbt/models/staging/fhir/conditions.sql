@@ -1,4 +1,9 @@
-{{ config(materialized='view', alias='stg_conditions') }}
+{{ config(
+    materialized='table',
+    alias='conditions',
+    engine='MergeTree()',
+    order_by=['patient_ref', 'tanggal_diagnosis']
+) }}
 
 -- Layer SILVER: diagnosis (Condition) dengan kode & nama ICD-10 terekstrak dari JSON.
 SELECT
@@ -9,7 +14,7 @@ SELECT
     JSON_VALUE(v.res_text_vc, '$.code.coding[0].code') AS icd10_code,
     JSON_VALUE(v.res_text_vc, '$.code.coding[0].display') AS diagnosis_name,
     JSON_VALUE(v.res_text_vc, '$.clinicalStatus.coding[0].code') AS clinical_status,
-    -- Flag khusus penyakit tidak menular prioritas, dipakai berulang di layer marts
+    -- Flag khusus penyakit tidak menular prioritas, dipakai berulang di model agregasi
     CASE
         WHEN JSON_VALUE(v.res_text_vc, '$.code.coding[0].code') LIKE 'I1%' THEN 'Hipertensi'
         WHEN JSON_VALUE(v.res_text_vc, '$.code.coding[0].code') LIKE 'E1%' THEN 'Diabetes Melitus'

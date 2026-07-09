@@ -1,4 +1,9 @@
-{{ config(materialized='view', alias='stg_organizations') }}
+{{ config(
+    materialized='table',
+    alias='organizations',
+    engine='MergeTree()',
+    order_by=['organization_id']
+) }}
 
 -- Layer SILVER: daftar Puskesmas/faskes (resource Organization) dengan nama bersih dari JSON.
 SELECT

@@ -1,11 +1,11 @@
-{{ config(materialized='view', alias='mart_deteksi_dini_hipertensi') }}
+{{ config(materialized='view', alias='deteksi_dini_hipertensi') }}
 
 -- Chart: "Deteksi Dini Risiko Hipertensi (Observasi vs Diagnosis Formal)"
 -- Klasifikasi pasien dari hasil pengukuran tensi aktual (LOINC 8480-6), lalu dicek
 -- apakah sudah punya diagnosis formal Hipertensi (Condition ICD-10 I1x).
 --
 -- CATATAN: dipakai IN (subquery tidak berkorelasi), BUKAN correlated EXISTS -- ClickHouse
--- tidak mendukung correlated subquery dengan baik, jadi logikanya ditulis ulang dari versi StarRocks.
+-- tidak mendukung correlated subquery dengan baik.
 
 WITH bp_reading AS (
     SELECT
@@ -13,7 +13,7 @@ WITH bp_reading AS (
         tanggal_periksa,
         max(CASE WHEN nama_pengukuran = 'Systolic blood pressure' THEN nilai END) AS sistol,
         max(CASE WHEN nama_pengukuran = 'Diastolic blood pressure' THEN nilai END) AS diastol
-    FROM {{ ref('stg_observations') }}
+    FROM {{ ref('observations') }}
     WHERE loinc_code = '8480-6'
     GROUP BY patient_ref, tanggal_periksa
 ),
@@ -34,7 +34,7 @@ klasifikasi AS (
 
 pasien_terdiagnosis AS (
     SELECT DISTINCT patient_ref
-    FROM {{ ref('stg_conditions') }}
+    FROM {{ ref('conditions') }}
     WHERE kategori_ptm = 'Hipertensi'
 )
 

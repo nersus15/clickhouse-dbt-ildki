@@ -1,8 +1,13 @@
-{{ config(materialized='view', alias='stg_observations') }}
+{{ config(
+    materialized='table',
+    alias='observations',
+    engine='MergeTree()',
+    order_by=['patient_ref', 'tanggal_periksa', 'loinc_code']
+) }}
 
 -- Layer SILVER: hasil pengukuran vital sign (Observation) terekstrak dari JSON.
--- Nilai 0 pada value_quantity dianggap data tidak valid/placeholder (dikecualikan di layer marts, bukan di sini,
--- supaya staging tetap representasi 1:1 dari data mentah).
+-- Nilai 0 pada value_quantity dianggap data tidak valid/placeholder (dikecualikan di model agregasi, bukan di sini,
+-- supaya model ini tetap representasi 1:1 dari data mentah).
 SELECT
     r.res_id AS observation_id,
     toDate(JSON_VALUE(v.res_text_vc, '$.effectiveDateTime')) AS tanggal_periksa,
