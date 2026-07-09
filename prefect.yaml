@@ -1,0 +1,50 @@
+# The Deployment configuration file for Prefect. Versi ClickHouse (menggantikan starrocks-pipeline).
+name: clickhouse-pipeline
+prefect-version: ">=3.0.0"
+
+pull:
+- prefect.deployments.steps.git_clone:
+    repository: "{{ prefect.blocks.github-repository.ildki-repo.repository_url }}"
+    branch: main
+    credentials: "{{ prefect.blocks.github-repository.ildki-repo.credentials }}"
+
+deployments:
+- name: ildki-dbt-clickhouse-deployment
+  entrypoint: dbt_runner.py:general_dbt_runner
+  parameters:
+    dbt_command: "build"
+  # schedule:
+  #   cron: "*/5 * * * *"   # setiap 5 menit
+  #   timezone: "Asia/Jakarta"
+  work_pool:
+    name: ildki-dbt-pool  # Harus sama dengan pool yang dibuat di Prefect UI
+    job_variables:
+      namespace: prefect-dbt
+      image: "fathur15/dbt:latest"  # image sudah punya dbt-clickhouse, tidak perlu rebuild
+      finished_job_ttl: 10
+      cpu_limit: "1"
+      memory_limit: "2Gi"
+      env:
+        # Ganti dari STARROCKS_* ke CLICKHOUSE_*, sesuai profiles.yml project ini.
+        # Kalau ClickHouse diakses lewat port-forward K8s (bukan Service DNS internal),
+        # ganti CLICKHOUSE_HOST sesuai Service ClickHouse di cluster (bukan localhost/host.docker.internal
+        # -- itu cuma dipakai untuk koneksi dari laptop, di dalam cluster job ini bisa pakai Service DNS langsung).
+        CLICKHOUSE_HOST: "{{ prefect.blocks.secret.clickhouse-host }}"
+        CLICKHOUSE_PORT: "8123"
+        CLICKHOUSE_USER: "{{ prefect.blocks.secret.clickhouse-user }}"
+        CLICKHOUSE_PASSWORD: "{{ prefect.blocks.secret.clickhouse-password }}"
+        CLICKHOUSE_DATABASE: "silver"
+        CLICKHOUSE_SECURE: "false"
+        CLICKHOUSE_VERIFY: "false"
+        HTTP_PROXY: "http://10.15.3.21:80/"
+        HTTPS_PROXY: "http://10.15.3.21:80/"
+        http_proxy: "http://10.15.3.21:80/"
+        https_proxy: "http://10.15.3.21:80/"
+        no_proxy: "127.0.0.1,localhost,10.43.0.1,kubernetes.default.svc,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16"
+        NO_PROXY: "127.0.0.1,localhost,10.43.0.1,kubernetes.default.svc,.svc,.cluster.local,10.42.0.0/16,10.43.0.0/16"
+
+# Hanya folder staging: run --select staging
+# Staging dan semua turunannya (downstream): run --select staging+
+# Hanya model tertentu di dalam staging: run --select staging.my_model_name
+# Menjalankan test hanya untuk staging: test --select staging
+# Build (Run + Test) hanya staging: build --select staging (paling direkomendasikan, run + test sekaligus)

@@ -1,0 +1,21 @@
+# ClickHouse connection
+# Profile ini dipakai untuk konek ke ClickHouse (menggantikan starrocks_db).
+# Semua model tanpa override schema akan otomatis ditulis ke database "silver"
+# (lihat CLICKHOUSE_DATABASE di bawah) — sesuai arsitektur bronze -> silver -> gold.
+clickhouse_db:
+  target: prod
+  outputs:
+    prod:
+      type: clickhouse
+      host: "{{ env_var('CLICKHOUSE_HOST') }}"
+      port: "{{ env_var('CLICKHOUSE_PORT', 8123) | as_number }}"
+      user: "{{ env_var('CLICKHOUSE_USER') }}"
+      password: "{{ env_var('CLICKHOUSE_PASSWORD') }}"
+      # "schema" di dbt-clickhouse = nama database tujuan (layer silver)
+      schema: "{{ env_var('CLICKHOUSE_DATABASE', 'silver') }}"
+      secure: "{{ env_var('CLICKHOUSE_SECURE', 'false') }}"
+      verify: "{{ env_var('CLICKHOUSE_VERIFY', 'false') }}"
+      connect_timeout: "{{ env_var('CLICKHOUSE_CONNECT_TIMEOUT', 30) | as_number }}"
+      # HTTP interface (port 8123), sama seperti yang dipakai mcp-server-clickhouse
+      use_lw_deletes: false
+      check_exchange: true

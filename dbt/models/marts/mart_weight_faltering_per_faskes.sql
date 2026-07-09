@@ -1,0 +1,27 @@
+{{ config(materialized='view', alias='mart_weight_faltering_per_faskes') }}
+
+-- Chart: "Tren Kasus Weight Faltering (Risiko Stunting) per Puskesmas"
+-- Alur relasi: CarePlan -> (CarePlan.encounter) -> Encounter -> (Encounter.serviceProvider) -> Organization
+-- Dua tahap join relasi (double-hop), makanya butuh 2x pemakaian stg_res_link.
+
+WITH careplan_encounter AS (
+    SELECT src_resource_id AS careplan_id, target_resource_id AS encounter_id
+    FROM {{ ref('stg_res_link') }}
+    WHERE source_resource_type = 'CarePlan' AND src_path = 'CarePlan.encounter'
+),
+
+encounter_org AS (
+    SELECT src_resource_id AS encounter_id, target_resource_id AS organization_id
+    FROM {{ ref('stg_res_link') }}
+    WHERE source_resource_type = 'Encounter' AND src_path = 'Encounter.serviceProvider'
+)
+
+SELECT
+    cp.tanggal,
+    o.nama_puskesmas,
+    count(*) AS jumlah_kasus
+FROM {{ ref('stg_careplans') }} AS cp
+JOIN careplan_encounter AS ce ON ce.careplan_id = cp.careplan_id
+JOIN encounter_org AS eo ON eo.encounter_id = ce.encounter_id
+JOIN {{ ref('stg_organizations') }} AS o ON o.organization_id = eo.organization_id
+GROUP BY cp.tanggal, o.nama_puskesmas

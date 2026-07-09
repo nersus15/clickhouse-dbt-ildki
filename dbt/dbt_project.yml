@@ -1,0 +1,39 @@
+# Main DBT CONFIG file
+# Versi ClickHouse dari project ildki_transformations (sebelumnya StarRocks).
+
+name: 'ildki_transformations_ch'
+version: '1.0.0'
+config-version: 2
+
+# Harus sama dengan nama profile di profiles.yml
+profile: 'clickhouse_db'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Konfigurasi materialisasi model
+# CATATAN: schema default (database tujuan) sudah di-set ke 'silver' lewat profiles.yml
+# (CLICKHOUSE_DATABASE). Jangan tambahkan +schema di sini lagi -- kalau di-override,
+# dbt akan membuat nama database 'silver_silver' (perilaku default generate_schema_name dbt).
+models:
+  ildki_transformations_ch:
+    # Layer SILVER - staging: ekstraksi & pembersihan 1:1 dari tabel bronze (fhirhapi_prod.public_hfj_*)
+    # Materialized sebagai VIEW: ringan, selalu live mengikuti data bronze, tidak butuh storage tambahan
+    staging:
+      +materialized: view
+
+    # Layer SILVER - marts: hasil agregasi/join yang langsung dipakai chart Superset
+    # Materialized sebagai VIEW dulu (paling aman & tanpa perlu konfigurasi engine/order_by).
+    # Kalau nanti volume data besar dan butuh performa lebih, bisa diubah ke materialized='table'
+    # dengan tambahan config engine (mis. 'MergeTree()') + order_by di tiap model .sql.
+    marts:
+      +materialized: view
