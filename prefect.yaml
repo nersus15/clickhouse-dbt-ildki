@@ -14,7 +14,7 @@ deployments:
   parameters:
     dbt_command: "build"
   schedule:
-    cron: "* * * * *"   # tiap 1 menit, sesuai permintaan -- CATATAN performa di bawah
+    cron: "* * * * *"
     timezone: "Asia/Jakarta"
   work_pool:
     name: ildki-dbt-pool  # Harus sama dengan pool yang dibuat di Prefect UI
