@@ -4,9 +4,9 @@ prefect-version: ">=3.0.0"
 
 pull:
 - prefect.deployments.steps.git_clone:
-    repository: "{{ prefect.blocks.github-repository.ildki-repo.repository_url }}"
+    repository: "{{ prefect.blocks.github-repository.clickhouse-repo.repository_url }}"
     branch: main
-    credentials: "{{ prefect.blocks.github-repository.ildki-repo.credentials }}"
+    credentials: "{{ prefect.blocks.github-repository.clickhouse-repo.credentials }}"
 
 deployments:
 - name: ildki-dbt-clickhouse-deployment
@@ -32,7 +32,7 @@ deployments:
         CLICKHOUSE_HOST: "{{ prefect.blocks.secret.clickhouse-host }}"
         CLICKHOUSE_PORT: "8123"
         CLICKHOUSE_USER: "{{ prefect.blocks.secret.clickhouse-user }}"
-        CLICKHOUSE_PASSWORD: "{{ prefect.blocks.secret.clickhouse-password }}"
+        CLICKHOUSE_PASSWORD: "{{ prefect.blocks.secret.clickhouse-pass }}"
         CLICKHOUSE_DATABASE: "silver"
         CLICKHOUSE_SECURE: "false"
         CLICKHOUSE_VERIFY: "false"
