@@ -15,8 +15,15 @@
 -- (mis. '2026-07-03T09:09:00+07:00'), BUKAN cuma tanggal. toDate() ClickHouse tidak bisa parse
 -- string seperti ini langsung (cuma nerima 'YYYY-MM-DD') -- makanya di-parse dulu lewat
 -- parseDateTimeBestEffortOrNull() (yang paham berbagai format ISO 8601 + timezone), baru dibungkus
--- toDate(). *OrNull dipakai supaya baris dengan effectiveDateTime kosong/rusak tidak bikin seluruh
--- dbt run gagal -- hasilnya jadi NULL, bukan exception.
+-- toDate().
+-- PENTING: parseDateTimeBestEffortOrNull() menghasilkan Nullable(DateTime) -- kalau dibiarkan
+-- begitu saja, tanggal_periksa jadi Nullable(Date), dan ClickHouse MENOLAK kolom Nullable
+-- dipakai sebagai sorting key (order_by) tabel MergeTree/ReplacingMergeTree (error "Sorting key
+-- contains nullable columns"). Makanya dibungkus coalesce(...) dengan fallback epoch
+-- ('1970-01-01', konsisten dengan konvensi res_deleted_at di seluruh project) supaya
+-- HASIL AKHIRNYA tetap non-Nullable Date, tapi baris dengan effectiveDateTime kosong/rusak
+-- tetap masuk (bukan bikin dbt run gagal) -- cuma tanggal_periksa-nya jadi '1970-01-01',
+-- gampang di-filter/dikenali di layer chart kalau perlu.
 -- CATATAN EDGE CASE (bukan error): toDate() pada DateTime hasil parse akan pakai timezone
 -- server ClickHouse (default UTC) untuk menentukan tanggal kalender -- pengukuran jam 00:xx
 -- WIB (+07:00) yang sebenarnya "hari X" bisa jadi tercatat sebagai "hari X-1" di UTC. Dampak
@@ -25,7 +32,10 @@
 SELECT
     r.res_id AS observation_id,
     r.res_updated,
-    toDate(parseDateTimeBestEffortOrNull(JSON_VALUE(v.res_text_vc, '$.effectiveDateTime'))) AS tanggal_periksa,
+    toDate(coalesce(
+        parseDateTimeBestEffortOrNull(JSON_VALUE(v.res_text_vc, '$.effectiveDateTime')),
+        toDateTime64('1970-01-01 00:00:00', 6)
+    )) AS tanggal_periksa,
     JSON_VALUE(v.res_text_vc, '$.subject.reference') AS patient_ref,
     JSON_VALUE(v.res_text_vc, '$.encounter.reference') AS encounter_ref,
     JSON_VALUE(v.res_text_vc, '$.code.coding[0].code') AS loinc_code,

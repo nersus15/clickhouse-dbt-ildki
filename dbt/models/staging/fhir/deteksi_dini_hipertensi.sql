@@ -20,6 +20,13 @@
 -- hilang itu diisi. Belum diperbaiki karena data saat ini selalu punya sistol+diastol lengkap
 -- (sudah divalidasi ke ClickHouse langsung) -- kalau nanti sumber data lain punya pola
 -- pengukuran tunggal, logic ini perlu ditinjau ulang (mis. pakai coalesce yang lebih eksplisit).
+-- CATATAN 4: CASE pada klasifikasi.kategori_tensi punya cabang "THEN NULL" (baris tanpa
+-- pengukuran valid, sengaja dibuang lewat WHERE kategori_tensi IS NOT NULL di bawah) --
+-- akibatnya ClickHouse infer TIPE kolomnya Nullable(String), walau NILAI akhirnya (setelah
+-- filter) tidak pernah NULL. Karena kolom ini dipakai di order_by (sorting key) tabel
+-- MergeTree, ClickHouse menolak ("Sorting key contains nullable columns"). Makanya di SELECT
+-- akhir dibungkus assumeNotNull() -- aman karena WHERE kategori_tensi IS NOT NULL sudah
+-- menjamin tidak ada baris NULL yang lolos sampai situ.
 
 WITH bp_reading AS (
     SELECT
@@ -53,7 +60,7 @@ pasien_terdiagnosis AS (
 )
 
 SELECT
-    kategori_tensi,
+    assumeNotNull(kategori_tensi) AS kategori_tensi,
     CASE
         WHEN k.patient_ref IN (SELECT patient_ref FROM pasien_terdiagnosis) THEN 'Sudah Terdiagnosis Hipertensi'
         ELSE 'Belum Ada Diagnosis Formal'
