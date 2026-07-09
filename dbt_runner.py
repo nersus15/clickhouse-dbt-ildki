@@ -63,6 +63,14 @@ def general_dbt_runner(
 ):
     logger = get_run_logger()
 
+    if os.getenv("CLICKHOUSE_PORT"):
+        try:
+            # Pastikan port bersih dari string kosong/kutip
+            port_val = os.getenv("CLICKHOUSE_PORT").replace('"', '').replace("'", "")
+            os.environ["CLICKHOUSE_PORT"] = str(int(port_val))
+        except ValueError:
+            logger.warning("Gagal casting CLICKHOUSE_PORT ke integer, menggunakan nilai default.")
+
     project_dir = os.path.join(os.getcwd(), "dbt")
     settings = PrefectDbtSettings(
         project_dir=project_dir,
