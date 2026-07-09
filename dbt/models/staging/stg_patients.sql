@@ -16,6 +16,7 @@ WITH fhir_resources AS (
 
 fhir_encounters AS (
     SELECT
+        res_id,
         fhir_id AS encounter_id,
         res_type,
         res_deleted_at
@@ -42,4 +43,4 @@ SELECT
     e.encounter_id
 FROM fhir_resources p
 LEFT JOIN resource_links rl ON p.res_id = rl.target_resource_id
-LEFT JOIN fhir_encounters e ON rl.src_resource_id = e.encounter_id
+LEFT JOIN fhir_encounters e ON rl.src_resource_id = e.res_id
