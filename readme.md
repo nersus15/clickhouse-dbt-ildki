@@ -14,17 +14,32 @@ Versi ClickHouse dari [`prefect-dbt-ildki`](../prefect-dbt-ildki) (yang aslinya 
 
 **Tidak ada prefix `stg_`/`mart_` pada nama model atau nama tabel/view di ClickHouse.** Semua model tinggal di satu folder `models/staging/{aplikasi}/` (untuk sekarang cuma `fhir/`), dan namanya cukup deskriptif dari isinya (mis. `conditions`, `top_diagnosis`) — karena "staging vs mart" itu sendiri sudah identik dengan "silver vs gold" secara konsep, prefix di nama akan jadi redundan/membingungkan.
 
-### Strategi materialisasi (Opsi C)
+### Strategi materialisasi (Opsi C + incremental, semua model sekarang tersimpan fisik)
 
 | Kategori model | Materialized | Alasan |
 |---|---|---|
-| **Ekstraksi 1:1 dari bronze**<br>`patients`, `resource`, `organizations`, `encounters`, `conditions`, `observations`, `careplans`, `res_link` | `table` (engine `MergeTree()`) | Dedup CDC (`FINAL`) + ekstraksi JSON (`JSON_VALUE`) itu mahal secara komputasi. Kalau `view`, biaya ini dihitung ULANG setiap kali chart Superset dibuka. Kalau `table`, biaya ini cuma dihitung SEKALI per `dbt run`, lalu dashboard baca tabel yang sudah jadi (cepat). |
-| **Agregasi/join untuk chart**<br>`kpi_totals`, `encounter_class`, `resource_daily_growth`, `top_diagnosis`, `penyakit_prioritas_trend`, `utilisasi_faskes`, `encounter_trend_per_faskes`, `deteksi_dini_hipertensi`, `tren_tensi_harian`, `weight_faltering_per_faskes` | `view` | Sumbernya sudah tabel bersih (bukan bronze mentah), jadi query-nya jauh lebih ringan meski dihitung ulang tiap kali diakses. Selalu real-time mengikuti isi tabel silver di atasnya. |
+| **Ekstraksi volume tinggi**<br>`resource`, `organizations`, `encounters`, `conditions`, `observations`, `careplans`, `res_link` | `incremental` (engine `ReplacingMergeTree(res_updated)` / `ReplacingMergeTree(sp_updated)` untuk `res_link`) | Volume Encounter/Observation/Condition di FHIR tumbuh cepat. `incremental` cuma proses baris baru/berubah sejak `dbt run` terakhir (watermark `res_updated`/`sp_updated`), bukan rebuild total tiap kali -- disiapkan dari awal supaya tidak perlu migrasi ulang saat data sudah besar. |
+| **Ekstraksi kompleks, volume rendah**<br>`patients` | `table` (full rebuild) | JOIN 2 resource type (Patient+Encounter) + link table -- watermark 1 kolom tidak cukup mendeteksi semua kasus perubahan (lihat komentar di file). Volume Patient jauh lebih kecil dari Encounter, jadi full rebuild masih murah. |
+| **Agregasi/join untuk chart**<br>`kpi_totals`, `encounter_class`, `resource_daily_growth`, `top_diagnosis`, `penyakit_prioritas_trend`, `utilisasi_faskes`, `encounter_trend_per_faskes`, `deteksi_dini_hipertensi`, `tren_tensi_harian`, `weight_faltering_per_faskes` | `table` (full rebuild, engine `MergeTree()`) | **Diambil langsung oleh Superset** -- disimpan fisik supaya baca dashboard = baca tabel biasa (instan, tanpa hitung ulang). BUKAN `incremental`: model ini semua `GROUP BY`/agregasi, dan incremental yang benar untuk agregasi butuh `AggregatingMergeTree` + kombinator `-State`/`-Merge` (baris baru bisa MENGUBAH grup yang sudah ada, bukan cuma nambah baris) -- jauh lebih kompleks & rawan salah hitung dibanding append biasa. Karena sumbernya sekarang tabel bersih (bukan bronze mentah), full rebuild agregasi ini tetap murah. |
 
-### Kapan view/table ini ter-update?
+**Artinya: sudah tidak ada model `view` sama sekali di project ini** -- semua 18 model (kecuali definisi `source`) menghasilkan tabel fisik di ClickHouse.
 
-- **View** (`kpi_totals` dkk): otomatis real-time, karena ClickHouse jalankan ulang query-nya tiap kali di-`SELECT` — tidak perlu `dbt run` untuk soal kesegaran data.
-- **Table** (`resource`, `conditions` dkk): **HANYA ter-update kalau `dbt run` dijalankan lagi** (full rebuild tabel dari bronze terkini). Karena datanya sekarang disimpan (bukan cuma query tersimpan seperti view), ini yang perlu **dijadwalkan** (lewat `prefect.yaml`, cron) supaya dashboard tidak baca data basi. Aman dijalankan berulang kali (`CREATE OR REPLACE TABLE` dampaknya idempotent).
+### Kenapa `incremental` + `ReplacingMergeTree`, bukan `delete+insert`?
+
+dbt-clickhouse punya beberapa `incremental_strategy` (`append`, `delete+insert`, `insert_overwrite`). Project ini pakai pola **`append` + `ReplacingMergeTree`**, BUKAN `delete+insert`, karena:
+- `delete+insert` di ClickHouse berjalan lewat **mutation** (`ALTER TABLE ... DELETE`) yang berat & async -- bukan `DELETE` OLTP biasa.
+- `append` + `ReplacingMergeTree(res_updated)` jauh lebih murah: baris baru/berubah cuma di-`INSERT`, dan ClickHouse yang urus dedup baris dengan `res_id` sama di background (menang versi `res_updated` terbesar).
+- Ini **persis pola yang sudah dipercaya di layer bronze** (`_peerdb_version`, `FINAL`) -- konsisten, bukan teknik baru.
+
+**Konsekuensi yang WAJIB diingat:** karena dedup `ReplacingMergeTree` itu *eventual* (baru benar-benar tergabung saat background merge selesai), **setiap query yang baca tabel `incremental` ini HARUS pakai `FINAL`** supaya tidak menghitung baris duplikat. Ke-10 model `view` (agregasi) di project ini sudah disesuaikan (`{{ ref('conditions') }} FINAL`, dst) -- kalau Anda menambah model baru yang membaca tabel-tabel ini, jangan lupa tambahkan `FINAL` juga.
+
+### Kapan tabel-tabel ini ter-update?
+
+- **SEMUA model sekarang butuh `dbt run`/`dbt build` untuk ter-update** -- tidak ada lagi `view` yang otomatis real-time. Ini konsekuensi langsung dari keputusan "semua tersimpan fisik supaya Superset baca instan".
+- Bedanya cuma seberapa besar kerja per run: `incremental` (staging) = cuma baris baru; `table` (semua chart + `patients`) = rebuild total, tapi murah karena sumbernya sudah tabel bersih.
+- Schedule `prefect.yaml` (`cron: "* * * * *"`, tiap 1 menit) jadi **satu-satunya** mekanisme kesegaran data sekarang -- kalau job ini berhenti/gagal, seluruh dashboard Superset ikut "beku" di data terakhir, bukan cuma sebagian.
+- **Run pertama** untuk model `incremental` otomatis full build juga (belum ada watermark pembanding) -- baru run kedua dan seterusnya benar-benar incremental.
+- **Kalau logic SQL suatu model `incremental` diubah** (bukan cuma datanya), histori lama TIDAK otomatis ke-reprocess -- wajib `dbt run --select <model> --full-refresh` supaya rebuild total dengan logic baru. Model `table` biasa tidak perlu ini (selalu full rebuild by design).
 
 ## Kenapa migrasi dari StarRocks?
 
@@ -59,10 +74,10 @@ Sebelumnya CDC pakai Apache Flink (PostgreSQL -> StarRocks) yang dinilai terlalu
                 ├── schema.yml           # Definisi source (tabel bronze) + deskripsi tiap model
                 │
                 ├── patients.sql         ┐
-                ├── resource.sql         │ materialized: table
-                ├── organizations.sql    │ (ekstraksi 1:1 dari bronze,
-                ├── encounters.sql       │  dedup + JSON_VALUE dihitung
-                ├── conditions.sql       │  sekali saat dbt run)
+                ├── resource.sql         │ materialized: incremental
+                ├── organizations.sql    │ (ReplacingMergeTree + watermark res_updated/sp_updated;
+                ├── encounters.sql       │  patients.sql masih 'table', lihat "Strategi materialisasi")
+                ├── conditions.sql       │
                 ├── observations.sql     │
                 ├── careplans.sql        │
                 ├── res_link.sql         ┘
@@ -70,10 +85,10 @@ Sebelumnya CDC pakai Apache Flink (PostgreSQL -> StarRocks) yang dinilai terlalu
                 ├── kpi_totals.sql                    ┐
                 ├── encounter_class.sql                │
                 ├── resource_daily_growth.sql          │
-                ├── top_diagnosis.sql                  │ materialized: view
-                ├── penyakit_prioritas_trend.sql       │ (agregasi/join, 1 model = 1 chart
-                ├── utilisasi_faskes.sql               │  Superset, baca dari table di atas)
-                ├── encounter_trend_per_faskes.sql     │
+                ├── top_diagnosis.sql                  │ materialized: table
+                ├── penyakit_prioritas_trend.sql       │ (agregasi/join, full rebuild tiap dbt run,
+                ├── utilisasi_faskes.sql               │  1 model = 1 chart Superset, dibaca langsung
+                ├── encounter_trend_per_faskes.sql     │  sebagai tabel -- tidak ada view lagi)
                 ├── deteksi_dini_hipertensi.sql        │
                 ├── tren_tensi_harian.sql              │
                 └── weight_faltering_per_faskes.sql    ┘
@@ -91,10 +106,10 @@ pip install prefect prefect-dbt[cli] dbt-clickhouse
 
 Docker image `fathur15/dbt:latest` yang dipakai di `prefect.yaml` **sudah** ter-install `dbt-clickhouse`, tidak perlu rebuild image.
 
-**Database `silver` harus sudah ada di ClickHouse sebelum dbt dijalankan** (sudah ada saat ini), dan user yang dipakai (`CLICKHOUSE_USER`) harus punya privilege `CREATE TABLE`/`CREATE VIEW`/`DROP`/`SELECT` di database tersebut (privilege `CREATE TABLE` ini baru dibutuhkan sekarang karena model ekstraksi berubah dari `view` ke `table`):
+**Database `silver` harus sudah ada di ClickHouse sebelum dbt dijalankan** (sudah ada saat ini), dan user yang dipakai (`CLICKHOUSE_USER`) harus punya privilege `CREATE TABLE`/`CREATE VIEW`/`DROP`/`SELECT`/`INSERT`/`ALTER` di database tersebut (privilege `CREATE TABLE`/`INSERT`/`ALTER` baru dibutuhkan sekarang karena model ekstraksi berubah dari `view` ke `table`/`incremental`):
 ```sql
 CREATE DATABASE IF NOT EXISTS silver;
-GRANT CREATE TABLE, CREATE VIEW, DROP, SELECT ON silver.* TO peerdb;
+GRANT CREATE TABLE, CREATE VIEW, DROP, SELECT, INSERT, ALTER ON silver.* TO peerdb;
 ```
 
 ## Konfigurasi
@@ -110,14 +125,9 @@ dbt debug         # cek koneksi
 dbt build         # build + test semua model (staging/fhir), urutan otomatis mengikuti ref()
 ```
 
-Karena semua model sekarang di satu folder `staging/fhir/`, tidak perlu lagi `--select staging` vs `--select marts` terpisah — `dbt build` saja sudah membangun urutan yang benar (model `table` dulu, baru `view` yang bergantung padanya), berkat dependency graph dari `ref()`.
+Karena semua model sekarang di satu folder `staging/fhir/`, tidak perlu lagi `--select staging` vs `--select marts` terpisah — `dbt build` saja sudah membangun urutan yang benar (model `incremental`/`table` dulu, baru `view` yang bergantung padanya), berkat dependency graph dari `ref()`.
 
-Kalau mau jadwal otomatis (supaya tabel `table` selalu segar), aktifkan `schedule:` di `prefect.yaml` (saat ini masih di-comment):
-```yaml
-schedule:
-  cron: "*/15 * * * *"   # contoh: tiap 15 menit, sesuaikan kebutuhan
-  timezone: "Asia/Jakarta"
-```
+Schedule sudah aktif di `prefect.yaml` (`cron: "* * * * *"`, tiap 1 menit). **Catatan performa:** dengan 7 model `incremental` ini, run tiap 1 menit seharusnya ringan (cuma proses delta) -- beda dengan kalau semuanya masih `table` (full rebuild tiap menit, berat begitu data besar). Kalau ternyata masih terasa berat, cek dulu apakah watermark (`res_updated`) benar-benar mengecilkan volume yang diproses tiap run (lihat log `dbt run` -- jumlah baris yang di-insert per run seharusnya kecil di luar run pertama).
 
 ## Cara Menjalankan (lewat Prefect, sama seperti project StarRocks)
 
@@ -137,34 +147,13 @@ def run_dbt_transformation():
 
 ## Catatan Penting / TODO
 
-- **View/tabel lama dengan nama `stg_*`/`mart_*` masih ada di database `silver`** (peninggalan sebelum restrukturisasi penamaan ini). Setelah `dbt run`/`dbt build` berhasil membuat semua object dengan nama baru (tanpa prefix), hapus manual yang lama di ClickHouse:
-  ```sql
-  DROP VIEW  IF EXISTS silver.stg_patient;  -- nama lama yang sempat salah alias, sebelum jadi stg_patients
-  DROP TABLE IF EXISTS silver.stg_resource;
-  DROP TABLE IF EXISTS silver.stg_organizations;
-  DROP TABLE IF EXISTS silver.stg_encounters;
-  DROP TABLE IF EXISTS silver.stg_conditions;
-  DROP TABLE IF EXISTS silver.stg_observations;
-  DROP TABLE IF EXISTS silver.stg_careplans;
-  DROP TABLE IF EXISTS silver.stg_res_link;
-  DROP TABLE IF EXISTS silver.stg_patients;
-  DROP VIEW  IF EXISTS silver.mart_kpi_totals;
-  DROP VIEW  IF EXISTS silver.mart_encounter_class;
-  DROP VIEW  IF EXISTS silver.mart_resource_daily_growth;
-  DROP VIEW  IF EXISTS silver.mart_top_diagnosis;
-  DROP VIEW  IF EXISTS silver.mart_penyakit_prioritas_trend;
-  DROP VIEW  IF EXISTS silver.mart_utilisasi_faskes;
-  DROP VIEW  IF EXISTS silver.mart_encounter_trend_per_faskes;
-  DROP VIEW  IF EXISTS silver.mart_deteksi_dini_hipertensi;
-  DROP VIEW  IF EXISTS silver.mart_tren_tensi_harian;
-  DROP VIEW  IF EXISTS silver.mart_weight_faltering_per_faskes;
-  ```
-  Lalu **update semua dataset Superset** yang tadinya menunjuk ke `silver.stg_*`/`silver.mart_*` supaya menunjuk ke nama baru tanpa prefix (mis. `silver.top_diagnosis`).
-- **Belum divalidasi eksekusi end-to-end setelah restrukturisasi ini** (`dbt run`/`dbt build` belum sempat dijalankan langsung). Wajib jalankan `dbt debug` lalu `dbt build` dulu sebagai validasi sebelum dipakai produksi -- terutama untuk memastikan config `engine`/`order_by` pada model `table` diterima dbt-clickhouse tanpa error.
+- **Database `silver` sudah dikosongkan total** (semua `stg_*`/`mart_*` versi lama sudah di-`DROP` manual). `dbt run`/`dbt build` berikutnya akan mulai dari kondisi bersih -- run pertama otomatis full build untuk semua model (termasuk yang `incremental`, karena belum ada watermark pembanding). **Update dataset Superset** ke nama tabel baru tanpa prefix (mis. `silver.top_diagnosis`) begitu model-model ini selesai ter-build.
+- **Belum divalidasi eksekusi end-to-end setelah restrukturisasi + incremental ini** (`dbt run`/`dbt build` belum sempat dijalankan langsung). Wajib jalankan `dbt debug` lalu `dbt build` dulu sebagai validasi sebelum dipakai produksi -- terutama untuk memastikan config `engine`/`order_by`/`is_incremental()` diterima dbt-clickhouse tanpa error, dan privilege `INSERT`/`ALTER` sudah di-grant (lihat "Prasyarat").
 - Ambang klasifikasi di `deteksi_dini_hipertensi.sql` (>=140/90 dan >=130/85) berdasarkan **satu kali pengukuran** — bukan pengganti penegakan diagnosis klinis.
 - `dbt_runner.py` sengaja **tidak** nge-log `CLICKHOUSE_PASSWORD` ke output (beda dari versi StarRocks lama yang nge-log `STARROCKS_PASS` — sebaiknya dihindari untuk keamanan).
 - **Jangan pakai `res_deleted_at IS NULL` atau kolom `*_at`/`*_deleted` lain dengan asumsi Nullable** di model manapun -- cek dulu tipe kolomnya di ClickHouse (`DESCRIBE TABLE ...`), karena hasil CDC PeerDB dari Postgres sering mengubah kolom Nullable jadi non-Nullable dengan nilai default/epoch.
-- **Kalau nanti butuh lebih ringan lagi** (skala data sudah besar): pertimbangkan `materialized='incremental'` untuk model ekstraksi (`resource`, `conditions`, dst) dengan `unique_key` yang sesuai, supaya `dbt run` cuma memproses baris baru/berubah, bukan rebuild total tabel tiap kali. Belum diterapkan sekarang untuk menjaga kesederhanaan & kebenaran data (full rebuild = selalu konsisten, tidak ada risiko logic incremental yang keliru).
+- **Kalau menambah model baru yang baca dari model `incremental`** (`resource`, `conditions`, `encounters`, `observations`, `careplans`, `organizations`, `res_link`): jangan lupa tambahkan `FINAL` setelah `{{ ref('nama_model') }}`, atau chart bisa menghitung baris duplikat yang belum ter-merge.
+- **`patients.sql` masih `table` (bukan incremental) secara sengaja** -- lihat komentar di file itu untuk alasannya. Kalau ke depan Patient jadi bottleneck juga, perlu didesain ulang (mis. incremental berbasis union watermark Patient + Encounter, bukan cuma satu kolom).
 
 ## Arsitektur Multi-Aplikasi (Monorepo vs Multi-repo)
 

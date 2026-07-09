@@ -13,9 +13,9 @@ deployments:
   entrypoint: dbt_runner.py:general_dbt_runner
   parameters:
     dbt_command: "build"
-  # schedule:
-  #   cron: "*/5 * * * *"   # setiap 5 menit
-  #   timezone: "Asia/Jakarta"
+  schedule:
+    cron: "* * * * *"   # tiap 1 menit, sesuai permintaan -- CATATAN performa di bawah
+    timezone: "Asia/Jakarta"
   work_pool:
     name: ildki-dbt-pool  # Harus sama dengan pool yang dibuat di Prefect UI
     job_variables:

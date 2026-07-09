@@ -1,15 +1,17 @@
 {{ config(
-    materialized='table',
+    materialized='incremental',
     alias='careplans',
-    engine='MergeTree()',
+    engine="ReplacingMergeTree(res_updated)",
     order_by=['careplan_id']
 ) }}
 
 -- Layer SILVER: rencana perawatan (CarePlan) -- termasuk program weight faltering/risiko stunting.
+-- INCREMENTAL: mengikuti pola yang sama dengan model ekstraksi lain. Baca ulang -> WAJIB FINAL.
 SELECT
     r.res_id AS careplan_id,
     toDate(r.res_published) AS tanggal,
     r.res_published,
+    r.res_updated,
     JSON_VALUE(v.res_text_vc, '$.status') AS status,
     JSON_VALUE(v.res_text_vc, '$.subject.reference') AS patient_ref,
     JSON_VALUE(v.res_text_vc, '$.encounter.reference') AS encounter_ref,
@@ -22,3 +24,6 @@ WHERE r._peerdb_is_deleted = 0
     AND v._peerdb_is_deleted = 0
     AND r.res_type = 'CarePlan'
     AND r.res_deleted_at = toDateTime64('1970-01-01 00:00:00', 6)
+{% if is_incremental() %}
+    AND r.res_updated > (SELECT max(res_updated) FROM {{ this }})
+{% endif %}

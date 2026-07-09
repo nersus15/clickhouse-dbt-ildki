@@ -6,6 +6,12 @@
 ) }}
 
 -- Layer SILVER: pasien (Patient) beserta encounter terkait (kalau ada), dari relasi Encounter.subject.
+-- SENGAJA MASIH 'table' (full rebuild), BUKAN incremental, walau model ekstraksi lain sudah:
+-- model ini JOIN 2 resource type (Patient + Encounter) + link table sekaligus, jadi baris hasil
+-- akhirnya bisa berubah walau res_updated milik Patient itu sendiri TIDAK berubah (mis. Encounter
+-- barunya update, bukan Patient-nya). Watermark sederhana berbasis 1 kolom res_updated tidak cukup
+-- untuk mendeteksi ini -> incremental di sini rawan silently miss data. Volume Patient juga jauh
+-- lebih rendah dibanding Encounter/Observation, jadi biaya full rebuild relatif kecil.
 -- FINAL + filter _peerdb_is_deleted dipakai karena tabel bronze ReplacingMergeTree (dedup CDC PeerDB).
 -- res_deleted_at di ClickHouse TIDAK Nullable -- "belum dihapus" direpresentasikan sebagai epoch
 -- '1970-01-01 00:00:00', BUKAN NULL. Filter 'IS NULL' tidak akan pernah match (selalu 0 baris).
