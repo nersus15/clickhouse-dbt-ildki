@@ -13,8 +13,8 @@ clickhouse_db:
       password: "{{ env_var('CLICKHOUSE_PASSWORD') }}"
       # "schema" di dbt-clickhouse = nama database tujuan (layer silver)
       schema: "{{ env_var('CLICKHOUSE_DATABASE', 'silver') }}"
-      secure: "{{ env_var('CLICKHOUSE_SECURE', 'false') }}"
-      verify: "{{ env_var('CLICKHOUSE_VERIFY', 'false') }}"
+      secure: "{{ env_var('CLICKHOUSE_SECURE', 'false') | as_bool}}"
+      verify: "{{ env_var('CLICKHOUSE_VERIFY', 'false') | as_bool}}"
       connect_timeout: "{{ env_var('CLICKHOUSE_CONNECT_TIMEOUT', 30) | as_number }}"
       # HTTP interface (port 8123), sama seperti yang dipakai mcp-server-clickhouse
       use_lw_deletes: false
