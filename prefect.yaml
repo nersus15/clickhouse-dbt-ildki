@@ -20,7 +20,7 @@ deployments:
     name: ildki-dbt-pool  # Harus sama dengan pool yang dibuat di Prefect UI
     job_variables:
       namespace: prefect-dbt
-      image: "fathur15/dbt:latest"  # image sudah punya dbt-clickhouse, tidak perlu rebuild
+      image: "fathur15/dbt:v0.0.1"
       finished_job_ttl: 10
       cpu_limit: "1"
       memory_limit: "2Gi"
