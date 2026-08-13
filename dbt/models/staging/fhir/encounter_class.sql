@@ -1,9 +1,9 @@
 {{ config(
-    materialized='table',
-    alias='encounter_class',
-    engine='MergeTree()',
-    order_by=['encounter_class']
+    materialized='view',
+    alias='encounter_class'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih.
 
 -- Chart: "Distribusi Kelas Encounter"
 -- encounters materialized='incremental' -- WAJIB FINAL.

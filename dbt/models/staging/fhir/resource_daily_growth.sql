@@ -1,9 +1,9 @@
 {{ config(
-    materialized='table',
-    alias='resource_daily_growth',
-    engine='MergeTree()',
-    order_by=['ingest_date', 'res_type']
+    materialized='view',
+    alias='resource_daily_growth'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih, jadi tidak perlu rebuild berkala.
 
 -- Chart: "Tren Ingest Resource Harian per Tipe"
 -- resource materialized='incremental' -- WAJIB FINAL.

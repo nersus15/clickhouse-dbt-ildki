@@ -5,6 +5,11 @@
     order_by=['patient_res_id']
 ) }}
 
+-- Masih 'table' saat model chart lain sudah 'view', karena ini satu-satunya yang
+-- baca bronze mentah (2x scan hfj_resource + hfj_res_link) -- terlalu mahal untuk view.
+-- TODO: pecah jadi ekstraksi silver 'patients' (sumber tabel tunggal, aman jadi MV)
+-- + view 'pasien_belum_kunjungan' di atas patients + res_link.
+
 -- Layer SILVER: pasien (Patient) beserta encounter terkait (kalau ada), dari relasi Encounter.subject.
 -- SENGAJA MASIH 'table' (full rebuild), BUKAN incremental, walau model ekstraksi lain sudah:
 -- model ini JOIN 2 resource type (Patient + Encounter) + link table sekaligus, jadi baris hasil

@@ -1,9 +1,10 @@
 {{ config(
-    materialized='table',
-    alias='clinical_status_summary',
-    engine='MergeTree()',
-    order_by=['res_type', 'status']
+    materialized='view',
+    alias='clinical_status_summary'
 ) }}
+
+-- VIEW, tapi ini satu-satunya model chart yang masih baca bronze langsung
+-- (tidak ada padanannya di silver). Model arsip, jarang diakses.
 
 -- Chart: "Breakdown Status Klinis per Resource Type" (dashboard tambahan/arsip -- terlalu teknis
 -- untuk dashboard kebijakan utama, tapi tetap disediakan sebagai referensi teknis)

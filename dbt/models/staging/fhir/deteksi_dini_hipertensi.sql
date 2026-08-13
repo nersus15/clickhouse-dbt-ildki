@@ -1,9 +1,11 @@
 {{ config(
-    materialized='table',
-    alias='deteksi_dini_hipertensi',
-    engine='MergeTree()',
-    order_by=['kategori_tensi', 'status_diagnosis']
+    materialized='view',
+    alias='deteksi_dini_hipertensi'
 ) }}
+
+-- VIEW, tapi kandidat paling berat dari model chart lain -- PERLU DIUKUR.
+-- Biayanya di full scan + FINAL observations (loinc_code tidak ada di order_by),
+-- bukan di count(DISTINCT). Kalau >3 detik, pertimbangkan Refreshable MV.
 
 -- Chart: "Deteksi Dini Risiko Hipertensi (Observasi vs Diagnosis Formal)"
 -- Klasifikasi pasien dari hasil pengukuran tensi aktual (LOINC 8480-6), lalu dicek
@@ -27,6 +29,8 @@
 -- MergeTree, ClickHouse menolak ("Sorting key contains nullable columns"). Makanya di SELECT
 -- akhir dibungkus assumeNotNull() -- aman karena WHERE kategori_tensi IS NOT NULL sudah
 -- menjamin tidak ada baris NULL yang lolos sampai situ.
+-- Setelah jadi VIEW batasan order_by tidak berlaku lagi, tapi assumeNotNull tetap
+-- dipertahankan supaya tipe kolom di Superset tetap String, bukan Nullable(String).
 
 WITH bp_reading AS (
     SELECT

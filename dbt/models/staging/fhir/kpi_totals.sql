@@ -1,9 +1,11 @@
 {{ config(
-    materialized='table',
-    alias='kpi_totals',
-    engine='MergeTree()',
-    order_by=['data_terakhir_diperbarui']
+    materialized='view',
+    alias='kpi_totals'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih (kecuali CTE freshness yang cuma
+-- ambil max(res_updated) dari bronze -- murah).
+-- TODO: kalau organizations jadi dictionary, ganti JOIN di faskes_summary dengan dictGet().
 
 -- Chart: "KPI Kebijakan Kesehatan"
 -- KPI ringkas untuk pejabat/pengambil keputusan: total pasien, kunjungan, diagnosis,

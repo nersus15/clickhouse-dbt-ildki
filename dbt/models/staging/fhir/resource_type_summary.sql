@@ -1,9 +1,9 @@
 {{ config(
-    materialized='table',
-    alias='resource_type_summary',
-    engine='MergeTree()',
-    order_by=['res_type']
+    materialized='view',
+    alias='resource_type_summary'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih.
 
 -- Chart: "Distribusi Resource FHIR per Tipe" (dashboard tambahan/arsip -- terlalu teknis untuk
 -- dashboard kebijakan utama, tapi tetap disediakan sebagai referensi teknis)

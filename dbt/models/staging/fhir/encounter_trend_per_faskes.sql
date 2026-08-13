@@ -1,9 +1,13 @@
 {{ config(
-    materialized='table',
-    alias='encounter_trend_per_faskes',
-    engine='MergeTree()',
-    order_by=['tanggal_kunjungan', 'nama_puskesmas']
+    materialized='view',
+    alias='encounter_trend_per_faskes'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih.
+-- Sempat dipertimbangkan incremental 'delete+insert', tapi unique_key
+-- (tanggal, nama_puskesmas) tidak aman kalau nama faskes berubah -- baris lama
+-- tidak pernah terhapus.
+-- TODO: kalau organizations jadi dictionary, ganti JOIN ketiga dengan dictGet().
 
 -- Chart: "Tren Pengiriman Data Kunjungan (Encounter) per Puskesmas"
 -- Satu baris = satu hari x satu puskesmas -> dipakai untuk line chart multi-garis di Superset.

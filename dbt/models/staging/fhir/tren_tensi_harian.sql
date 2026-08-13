@@ -1,9 +1,11 @@
 {{ config(
-    materialized='table',
-    alias='tren_tensi_harian',
-    engine='MergeTree()',
-    order_by=['tanggal_periksa']
+    materialized='view',
+    alias='tren_tensi_harian'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih.
+-- PERLU DIUKUR: filter loinc_code tidak ada di order_by observations, jadi full
+-- scan + FINAL. Kalau lambat, ubah observations ke order_by=['loinc_code','observation_id'].
 
 -- Chart: "Tren Rata-rata Tekanan Darah Harian (Sistol/Diastol)"
 -- Nilai 0 dikecualikan karena diindikasikan data tidak valid/placeholder.

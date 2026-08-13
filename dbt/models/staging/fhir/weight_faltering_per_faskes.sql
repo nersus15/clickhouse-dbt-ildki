@@ -1,9 +1,10 @@
 {{ config(
-    materialized='table',
-    alias='weight_faltering_per_faskes',
-    engine='MergeTree()',
-    order_by=['tanggal', 'nama_puskesmas']
+    materialized='view',
+    alias='weight_faltering_per_faskes'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih.
+-- TODO: kalau organizations jadi dictionary, ganti JOIN terakhir dengan dictGet().
 
 -- Chart: "Tren Kasus Weight Faltering (Risiko Stunting) per Puskesmas"
 -- Alur relasi: CarePlan -> (CarePlan.encounter) -> Encounter -> (Encounter.serviceProvider) -> Organization

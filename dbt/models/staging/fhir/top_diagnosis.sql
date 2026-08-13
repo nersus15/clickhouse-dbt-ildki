@@ -1,9 +1,9 @@
 {{ config(
-    materialized='table',
-    alias='top_diagnosis',
-    engine='MergeTree()',
-    order_by=['kode_icd10']
+    materialized='view',
+    alias='top_diagnosis'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih.
 
 -- Chart: "10 Besar Penyakit (Diagnosis Terbanyak)"
 -- conditions materialized='incremental' -- WAJIB FINAL.

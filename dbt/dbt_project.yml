@@ -29,10 +29,26 @@ clean-targets:
 #
 # Materialized TIDAK di-set di level folder di sini, tapi eksplisit per-model lewat config()
 # di tiap file .sql (opsi C -- lihat readme.md):
-# - Model ekstraksi (mis. resource, conditions, observations) -> materialized='table'
+# - Model ekstraksi (mis. resource, conditions, observations) -> materialized='incremental'
 #   (dedup FINAL + ekstraksi JSON dihitung sekali saat dbt run, bukan tiap kali chart dibuka)
 # - Model agregasi/join untuk chart (mis. top_diagnosis, kpi_totals) -> materialized='view'
 #   (murah karena sumbernya sudah berupa table bersih, bukan bronze mentah)
+#
+# SIAPA MENJALANKAN APA:
+# - K8s Job sekali jalan (~/project/ildki/platform/system/data/dbt/kjob):
+#   `dbt build` penuh -- deploy objek DDL (view/MV/dictionary) + seeding incremental.
+#   Dijalankan ulang hanya saat SQL berubah.
+# - Prefect tiap 5 menit (ildki-dbt-clickhouse-incremental):
+#   `dbt run --select encounters conditions observations careplans`.
+#   Tanpa suffix '+', supaya model MV tidak ikut ter-drop-recreate.
+#
+# Pengecualian yang sengaja tetap 'table': models/staging/fhir/patients.sql
+#
+# Belum dikerjakan:
+# - resource, res_link, patients -> materialized_view
+# - organizations -> dictionary + rewrite dictGet() di 4 model agregasi
+# - encounters/conditions/observations/careplans TIDAK bisa jadi MV: JOIN
+#   hfj_resource + hfj_res_ver, sedangkan MV cuma trigger di tabel paling kiri.
 #
 # Layer GOLD BELUM dipakai: rencananya gold baru dibuat nanti saat sudah perlu menggabungkan
 # data dari lebih dari satu source aplikasi (mis. FHIR + Jaksimpus dkk). Macro

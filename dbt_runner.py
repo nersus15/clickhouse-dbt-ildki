@@ -40,7 +40,8 @@ def validate_dependencies(settings: PrefectDbtSettings, selector: Optional[str])
 def execute_dbt_command(settings: PrefectDbtSettings, command: str, selector: Optional[str] = None):
     logger = get_run_logger()
     runner = PrefectDbtRunner(settings=settings)
-    runner.invoke(["clean"])
+    # `dbt clean` sengaja tidak dipanggil: menghapus dbt_packages tiap run bikin
+    # dbt deps mengunduh ulang -- kontributor OOM.
 
     full_command = [command]
     if selector:
@@ -97,3 +98,35 @@ def general_dbt_runner(
     execute_dbt_command(settings, dbt_command, selector)
 
     logger.info("Pipeline dbt (ClickHouse) selesai.")
+
+
+@flow(name="DBT Incremental Runner (ClickHouse)")
+def incremental_runner(select: str = "encounters conditions observations careplans"):
+    """Flow runtime terjadwal, khusus model incremental.
+
+    Model DDL (view/MV/dictionary) dijalankan sekali lewat K8s Job, bukan di sini.
+    Lebih ramping dari general_dbt_runner: tanpa clean/debug/list, dan pakai
+    `dbt run` bukan `dbt build`.
+    """
+    logger = get_run_logger()
+
+    if os.getenv("CLICKHOUSE_PORT"):
+        try:
+            port_val = os.getenv("CLICKHOUSE_PORT").replace('"', '').replace("'", "")
+            os.environ["CLICKHOUSE_PORT"] = str(int(port_val))
+        except ValueError:
+            logger.warning("Gagal casting CLICKHOUSE_PORT ke integer, memakai nilai default.")
+
+    if "+" in select:
+        raise ValueError(
+            f"Selector '{select}' mengandung '+'. Sebut model incremental secara "
+            "eksplisit -- suffix '+' menyeret model MV/view/dictionary ke dalam run."
+        )
+
+    project_dir = os.path.join(os.getcwd(), "dbt")
+    settings = PrefectDbtSettings(project_dir=project_dir, profiles_dir=project_dir)
+
+    logger.info(f"Eksekusi incremental: dbt run --select {select}")
+    execute_dbt_command(settings, "run", select)
+
+    logger.info("Pipeline dbt incremental (ClickHouse) selesai.")

@@ -1,9 +1,9 @@
 {{ config(
-    materialized='table',
-    alias='penyakit_prioritas_trend',
-    engine='MergeTree()',
-    order_by=['tanggal_layanan', 'kategori_penyakit']
+    materialized='view',
+    alias='penyakit_prioritas_trend'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih.
 
 -- Chart: "Tren Kasus Hipertensi & Diabetes Melitus"
 -- conditions materialized='incremental' -- WAJIB FINAL.

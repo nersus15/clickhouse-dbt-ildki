@@ -1,9 +1,10 @@
 {{ config(
-    materialized='table',
-    alias='utilisasi_faskes',
-    engine='MergeTree()',
-    order_by=['nama_puskesmas']
+    materialized='view',
+    alias='utilisasi_faskes'
 ) }}
+
+-- VIEW: sumbernya sudah tabel silver yang bersih.
+-- TODO: kalau organizations jadi dictionary, ganti JOIN dengan dictGet().
 
 -- Chart: "Utilisasi Layanan per Puskesmas"
 -- res_link & organizations materialized='incremental' -- WAJIB FINAL.
