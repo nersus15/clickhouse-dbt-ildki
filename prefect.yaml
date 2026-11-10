@@ -11,7 +11,7 @@ deployments:
 - name: ildki-dbt-clickhouse-incremental
   entrypoint: dbt_runner.py:incremental_runner
   parameters:
-    select: "encounters conditions observations careplans"
+    select: "resource res_link organizations patients encounters conditions observations careplans"
   schedule:
     # Sebelumnya "* * * * *" -- penyebab utama OOM.
     cron: "*/1 * * * *"

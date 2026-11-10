@@ -42,7 +42,8 @@ clean-targets:
 #   `dbt run --select encounters conditions observations careplans`.
 #   Tanpa suffix '+', supaya model MV tidak ikut ter-drop-recreate.
 #
-# Pengecualian yang sengaja tetap 'table': models/staging/fhir/patients.sql
+# Sudah tidak ada model 'table': patients dipecah jadi ekstraksi incremental
+# (patients) + view (pasien_belum_kunjungan), supaya tidak lagi baca bronze mentah.
 #
 # Belum dikerjakan:
 # - resource, res_link, patients -> materialized_view

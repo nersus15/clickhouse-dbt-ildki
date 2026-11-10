@@ -101,7 +101,7 @@ def general_dbt_runner(
 
 
 @flow(name="DBT Incremental Runner (ClickHouse)")
-def incremental_runner(select: str = "encounters conditions observations careplans"):
+def incremental_runner(select: str = "resource res_link organizations patients encounters conditions observations careplans"):
     """Flow runtime terjadwal, khusus model incremental.
 
     Model DDL (view/MV/dictionary) dijalankan sekali lewat K8s Job, bukan di sini.

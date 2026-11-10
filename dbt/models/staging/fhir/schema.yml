@@ -20,9 +20,9 @@ sources:
         description: "Indeks search parameter FHIR bertipe token (status, class, code)"
 
 models:
-  # --- Ekstraksi 1:1 dari bronze (materialized: table) ---
+  # --- Ekstraksi 1:1 dari bronze (materialized: incremental) ---
   - name: patients
-    description: "Pasien (Patient) beserta encounter terkait (kalau ada), dari relasi Encounter.subject"
+    description: "Pasien (Patient), ekstraksi 1:1 dari bronze"
   - name: resource
     description: "Metadata resource yang sudah dibersihkan (dedup CDC + normalisasi status hapus)"
   - name: organizations
@@ -51,6 +51,8 @@ models:
     description: "Chart: Tren Kasus Hipertensi & Diabetes Melitus"
   - name: utilisasi_faskes
     description: "Chart: Utilisasi Layanan per Puskesmas"
+  - name: pasien_belum_kunjungan
+    description: "Chart: Pasien Belum Ada Kunjungan (satu baris = satu pasien tanpa Encounter)"
   - name: encounter_trend_per_faskes
     description: "Chart: Tren Pengiriman Data Kunjungan (Encounter) per Puskesmas"
   - name: deteksi_dini_hipertensi

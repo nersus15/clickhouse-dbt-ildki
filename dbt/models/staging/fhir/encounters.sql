@@ -6,9 +6,6 @@
     order_by=['encounter_id']
 ) }}
 
--- Layer SILVER: kunjungan (Encounter) dengan status & kelas layanan terekstrak dari JSON.
--- INCREMENTAL: Encounter termasuk resource dengan pertumbuhan tinggi -- ini prioritas utama
--- kenapa pola incremental disiapkan dari awal. Baca ulang -> WAJIB FINAL.
 SELECT
     r.res_id AS encounter_id,
     toDate(r.res_published) AS tanggal_kunjungan,
