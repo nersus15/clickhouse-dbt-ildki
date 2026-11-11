@@ -12,6 +12,11 @@ deployments:
   entrypoint: dbt_runner.py:incremental_runner
   parameters:
     select: "resource res_link organizations patients encounters conditions observations careplans"
+    # true HANYA untuk run manual (Prefect UI -> Custom run) setelah logic/kolom model
+    # incremental berubah. Lihat docstring incremental_runner.
+    full_refresh: false
+  # Run manual full_refresh bisa makan beberapa menit; run terjadwal antre di belakangnya.
+  concurrency_limit: 1
   schedule:
     # Sebelumnya "* * * * *" / "*/1 * * * *" (identik: tiap menit) -- penyebab utama OOM.
     cron: "*/5 * * * *"

@@ -202,14 +202,19 @@ Definisi (Permenkes 2/2020 Standar Antropometri Anak + Playbook SATUSEHAT Gizi):
 - Performa: ukur `deteksi_dini_hipertensi`, `tren_tensi_harian`, `stunting_per_faskes`; jika > 3 detik → Refreshable MV `REFRESH EVERY 10 MINUTE`. JANGAN ubah `order_by` observations ke `(loinc_code, observation_id)` (dedup ReplacingMergeTree per seluruh kunci → baris lama tak terhapus bila kode di-update).
 - Sinkronkan `readme.md` & komentar `dbt_project.yml`.
 
-## Urutan rilis
+## Urutan rilis (tanpa command dbt -- semua lewat Prefect)
 
-1. Satu PR: Fase 1 + 2 + 4 + 5 (kolom).
-2. Pause deployment Prefect `ildki-dbt-clickhouse-incremental`.
-3. `dbt run --full-refresh --select resource res_link organizations patients encounters conditions observations careplans`
-4. `dbt run --select` semua view (Fase 3, 5) → `dbt test`.
-5. Resume Prefect (cron `*/5`).
-6. Superset: refresh schema dataset, chart stunting baru (metric prevalensi), ganti label KPI.
+1. Merge branch `fix/audit-model-2026-11` ke `main` & push (deployer & flow run sama-sama clone `main`).
+2. Redeploy flow: `~/project/ildki/platform/system/data/dbt/run.sh ildki_clickhouse deploy-flow`
+   (memperbarui cron `*/5`, parameter `full_refresh`, `concurrency_limit: 1`).
+3. Prefect UI -> deployment `ildki-dbt-clickhouse-incremental` -> **Custom run** dengan
+   `full_refresh = true`. Flow menjalankan: `dbt run --full-refresh` 8 model ekstraksi ->
+   `dbt run --select config.materialized:view` -> `dbt test`.
+   Run terjadwal antara langkah 1 dan 3 akan GAGAL (kolom `_synced_at` belum ada di tabel
+   lama) -- tidak merusak data, berhenti sendiri setelah full refresh selesai.
+4. Cek log `dbt test` (terutama `assert_silver_lengkap`).
+5. Superset: refresh schema dataset; chart weight faltering (`jumlah_kasus` -> `jumlah_careplan`/`jumlah_pasien`);
+   chart baru `stunting_per_faskes`; label KPI pakai `pasien_*`.
 
 ## Sumber
 

@@ -37,7 +37,8 @@ def validate_dependencies(settings: PrefectDbtSettings, selector: Optional[str])
         raise Exception("Gagal memvalidasi dependensi.")
 
 @task(name="DBT Core Execution")
-def execute_dbt_command(settings: PrefectDbtSettings, command: str, selector: Optional[str] = None):
+def execute_dbt_command(settings: PrefectDbtSettings, command: str, selector: Optional[str] = None,
+                        extra_args: Optional[list] = None):
     logger = get_run_logger()
     runner = PrefectDbtRunner(settings=settings)
     # `dbt clean` sengaja tidak dipanggil: menghapus dbt_packages tiap run bikin
@@ -46,6 +47,8 @@ def execute_dbt_command(settings: PrefectDbtSettings, command: str, selector: Op
     full_command = [command]
     if selector:
         full_command.extend(["--select", selector])
+    if extra_args:
+        full_command.extend(extra_args)
 
     logger.info(f"Eksekusi: dbt {' '.join(full_command)}")
     result = runner.invoke(full_command)
@@ -101,12 +104,20 @@ def general_dbt_runner(
 
 
 @flow(name="DBT Incremental Runner (ClickHouse)")
-def incremental_runner(select: str = "resource res_link organizations patients encounters conditions observations careplans"):
+def incremental_runner(
+    select: str = "resource res_link organizations patients encounters conditions observations careplans",
+    full_refresh: bool = False,
+):
     """Flow runtime terjadwal, khusus model incremental.
 
     Model DDL (view/MV/dictionary) dijalankan sekali lewat K8s Job, bukan di sini.
     Lebih ramping dari general_dbt_runner: tanpa clean/debug/list, dan pakai
     `dbt run` bukan `dbt build`.
+
+    full_refresh=True (jalankan manual dari Prefect UI, "Custom run") dipakai setelah
+    logic/kolom model incremental berubah: rebuild total model `select`, lalu
+    rebuild semua view (bisa ikut berubah kolomnya), lalu dbt test. Deployment
+    di-set concurrency_limit 1 supaya run terjadwal antre, tidak bentrok.
     """
     logger = get_run_logger()
 
@@ -126,7 +137,15 @@ def incremental_runner(select: str = "resource res_link organizations patients e
     project_dir = os.path.join(os.getcwd(), "dbt")
     settings = PrefectDbtSettings(project_dir=project_dir, profiles_dir=project_dir)
 
-    logger.info(f"Eksekusi incremental: dbt run --select {select}")
-    execute_dbt_command(settings, "run", select)
+    if full_refresh:
+        logger.info(f"Full refresh: dbt run --select {select} --full-refresh")
+        execute_dbt_command(settings, "run", select, ["--full-refresh"])
+        logger.info("Rebuild view: dbt run --select config.materialized:view")
+        execute_dbt_command(settings, "run", "config.materialized:view")
+        logger.info("Validasi: dbt test")
+        execute_dbt_command(settings, "test")
+    else:
+        logger.info(f"Eksekusi incremental: dbt run --select {select}")
+        execute_dbt_command(settings, "run", select)
 
     logger.info("Pipeline dbt incremental (ClickHouse) selesai.")
