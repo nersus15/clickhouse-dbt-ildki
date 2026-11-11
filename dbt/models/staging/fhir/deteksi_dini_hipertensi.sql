@@ -3,58 +3,51 @@
     alias='deteksi_dini_hipertensi'
 ) }}
 
--- VIEW, tapi kandidat paling berat dari model chart lain -- PERLU DIUKUR.
--- Biayanya di full scan + FINAL observations (loinc_code tidak ada di order_by),
--- bukan di count(DISTINCT). Kalau >3 detik, pertimbangkan Refreshable MV.
-
 -- Chart: "Deteksi Dini Risiko Hipertensi (Observasi vs Diagnosis Formal)"
--- Klasifikasi pasien dari hasil pengukuran tensi aktual (LOINC 8480-6), lalu dicek
--- apakah sudah punya diagnosis formal Hipertensi (Condition ICD-10 I1x).
+-- Klasifikasi tiap pasien dari pemeriksaan tensi TERAKHIR, lalu dicek apakah sudah punya
+-- diagnosis formal Hipertensi (Condition ICD-10 I10-I15).
 --
--- CATATAN 1: dipakai IN (subquery tidak berkorelasi), BUKAN correlated EXISTS -- ClickHouse
--- tidak mendukung correlated subquery dengan baik.
--- CATATAN 2: observations & conditions materialized='incremental' -- WAJIB FINAL.
--- CATATAN 3 (edge case, BUKAN error): kondisi "sistol >= 140 OR diastol >= 90" bisa hasilkan
--- NULL (bukan TRUE/FALSE) kalau salah satu dari sistol/diastol NULL dan yang lain di bawah
--- ambang -- CASE WHEN akan skip ke baris berikutnya (perilaku standar SQL untuk NULL di WHEN).
--- Dampaknya: pasien yang cuma punya SATU dari dua angka tensi (jarang, tapi mungkin) bisa
--- ke-klasifikasi 'Normal' padahal semestinya masuk kategori lebih tinggi kalau angka yang
--- hilang itu diisi. Belum diperbaiki karena data saat ini selalu punya sistol+diastol lengkap
--- (sudah divalidasi ke ClickHouse langsung) -- kalau nanti sumber data lain punya pola
--- pengukuran tunggal, logic ini perlu ditinjau ulang (mis. pakai coalesce yang lebih eksplisit).
--- CATATAN 4: CASE pada klasifikasi.kategori_tensi punya cabang "THEN NULL" (baris tanpa
--- pengukuran valid, sengaja dibuang lewat WHERE kategori_tensi IS NOT NULL di bawah) --
--- akibatnya ClickHouse infer TIPE kolomnya Nullable(String), walau NILAI akhirnya (setelah
--- filter) tidak pernah NULL. Karena kolom ini dipakai di order_by (sorting key) tabel
--- MergeTree, ClickHouse menolak ("Sorting key contains nullable columns"). Makanya di SELECT
--- akhir dibungkus assumeNotNull() -- aman karena WHERE kategori_tensi IS NOT NULL sudah
--- menjamin tidak ada baris NULL yang lolos sampai situ.
--- Setelah jadi VIEW batasan order_by tidak berlaku lagi, tapi assumeNotNull tetap
--- dipertahankan supaya tipe kolom di Superset tetap String, bukan Nullable(String).
+-- SATUSEHAT mengirim sistol (LOINC 8480-6) dan diastol (8462-4) sebagai Observation
+-- TERPISAH -- keduanya dipasangkan per encounter. Ambang klasifikasi untuk DEWASA dan
+-- berbasis satu kali pengukuran, bukan pengganti diagnosis klinis.
+-- maxIf/argMax mengembalikan 0 kalau angka tidak ada, jadi pembacaan tunggal (cuma sistol
+-- atau cuma diastol) tetap terklasifikasi dari angka yang ada.
+-- Rentang plausibel (sistol 50-300, diastol 30-200) membuang placeholder 0 & salah ketik.
+-- Nama CTE kolom (kategori_raw) sengaja beda dari alias akhir: di ClickHouse alias SELECT
+-- menimpa nama kolom di WHERE/GROUP BY.
+-- observations & conditions materialized='incremental' -- WAJIB FINAL.
 
-WITH bp_reading AS (
+WITH bp AS (
     SELECT
         patient_ref,
-        tanggal_periksa,
-        max(CASE WHEN nama_pengukuran = 'Systolic blood pressure' THEN nilai END) AS sistol,
-        max(CASE WHEN nama_pengukuran = 'Diastolic blood pressure' THEN nilai END) AS diastol
+        encounter_ref,
+        max(tanggal_periksa) AS tanggal_periksa,
+        maxIf(nilai, loinc_code = '8480-6' AND nilai BETWEEN 50 AND 300) AS sistol,
+        maxIf(nilai, loinc_code = '8462-4' AND nilai BETWEEN 30 AND 200) AS diastol
     FROM {{ ref('observations') }} FINAL
-    WHERE loinc_code = '8480-6'
-    GROUP BY patient_ref, tanggal_periksa
+    WHERE loinc_code IN ('8480-6', '8462-4')
+    GROUP BY patient_ref, encounter_ref
+),
+
+terakhir AS (
+    SELECT
+        patient_ref,
+        argMax(sistol, tanggal_periksa) AS s,
+        argMax(diastol, tanggal_periksa) AS d
+    FROM bp
+    WHERE sistol > 0 OR diastol > 0
+    GROUP BY patient_ref
 ),
 
 klasifikasi AS (
     SELECT
         patient_ref,
-        tanggal_periksa,
-        CASE
-            WHEN sistol IS NULL AND diastol IS NULL THEN NULL
-            WHEN coalesce(sistol, 0) = 0 AND coalesce(diastol, 0) = 0 THEN NULL
-            WHEN sistol >= 140 OR diastol >= 90 THEN 'Hipertensi (>=140/90)'
-            WHEN sistol >= 130 OR diastol >= 85 THEN 'Waspada/Pra-Hipertensi (>=130/85)'
-            ELSE 'Normal'
-        END AS kategori_tensi
-    FROM bp_reading
+        multiIf(
+            s >= 140 OR d >= 90, 'Hipertensi (>=140/90)',
+            s >= 130 OR d >= 85, 'Waspada/Pra-Hipertensi (>=130/85)',
+            'Normal'
+        ) AS kategori_raw
+    FROM terakhir
 ),
 
 pasien_terdiagnosis AS (
@@ -64,12 +57,9 @@ pasien_terdiagnosis AS (
 )
 
 SELECT
-    assumeNotNull(kategori_tensi) AS kategori_tensi,
-    CASE
-        WHEN k.patient_ref IN (SELECT patient_ref FROM pasien_terdiagnosis) THEN 'Sudah Terdiagnosis Hipertensi'
-        ELSE 'Belum Ada Diagnosis Formal'
-    END AS status_diagnosis,
-    count(DISTINCT k.patient_ref) AS jumlah_pasien
-FROM klasifikasi AS k
-WHERE kategori_tensi IS NOT NULL
+    kategori_raw AS kategori_tensi,
+    if(patient_ref IN (SELECT patient_ref FROM pasien_terdiagnosis),
+       'Sudah Terdiagnosis Hipertensi', 'Belum Ada Diagnosis Formal') AS status_diagnosis,
+    count() AS jumlah_pasien
+FROM klasifikasi
 GROUP BY kategori_tensi, status_diagnosis

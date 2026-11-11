@@ -2,24 +2,28 @@
     materialized='incremental',
     incremental_strategy='append',
     alias='res_link',
-    engine="ReplacingMergeTree(sp_updated)",
-    order_by=['source_resource_type', 'src_path', 'src_resource_id', 'target_resource_type', 'target_resource_id']
+    engine="ReplacingMergeTree(_synced_at, is_deleted)",
+    order_by=['pid']
 ) }}
 
 -- Layer SILVER: relasi antar-resource (foreign key FHIR), dibersihkan dari duplikasi CDC.
 -- Dipakai di model agregasi untuk join Encounter->Organization, CarePlan->Encounter, dst.
--- INCREMENTAL: relasi tumbuh proporsional dengan Encounter/Condition dkk. Watermark pakai
--- sp_updated (timestamp update relasi ini di HAPI FHIR), bukan res_updated (tabel ini bukan
--- per-resource, jadi tidak ada kolom res_updated). Baca ulang -> WAJIB FINAL.
+-- INCREMENTAL -- baca ulang WAJIB FINAL. Watermark: macros/cdc_incremental.sql.
+-- Kunci dedup = pid saja: saat resource di-update HAPI menghapus baris link lama (pid lama)
+-- lalu menulis baru. Baris hapus ikut ditulis dengan is_deleted=1 supaya FINAL membuang
+-- link lama -- sebelumnya link basi menumpuk selamanya. Baris hapus PeerDB bisa cuma berisi
+-- PK, jadi kunci & versi (_synced_at) tidak boleh bergantung pada kolom lain.
 SELECT
+    pid,
     src_path,
     source_resource_type,
     src_resource_id,
     target_resource_type,
     target_resource_id,
-    sp_updated
+    sp_updated,
+    l._peerdb_is_deleted AS is_deleted,
+    {{ cdc_synced_at(['l']) }}
 FROM {{ source('fhirhapi_prod', 'hfj_res_link') }} AS l FINAL
-WHERE l._peerdb_is_deleted = 0
 {% if is_incremental() %}
-    AND l.sp_updated > (SELECT max(sp_updated) FROM {{ this }})
+WHERE l._peerdb_synced_at > {{ cdc_watermark() }}
 {% endif %}

@@ -10,6 +10,7 @@
 SELECT
     icd10_code AS kode_icd10,
     diagnosis_name AS nama_diagnosis,
-    count(*) AS jumlah_kasus
+    count(*) AS jumlah_kasus,
+    uniqExact(patient_ref) AS jumlah_pasien
 FROM {{ ref('conditions') }} FINAL
 GROUP BY icd10_code, diagnosis_name

@@ -2,53 +2,38 @@
     materialized='incremental',
     incremental_strategy='append',
     alias='observations',
-    engine="ReplacingMergeTree(res_updated)",
+    engine="ReplacingMergeTree(_synced_at, is_deleted)",
     order_by=['observation_id']
 ) }}
 
--- Layer SILVER: hasil pengukuran vital sign (Observation) terekstrak dari JSON.
--- INCREMENTAL: Observation biasanya resource dengan volume PALING TINGGI (beberapa pengukuran
--- per kunjungan) -- prioritas utama pola incremental. Baca ulang -> WAJIB FINAL.
--- Nilai 0 pada value_quantity dianggap data tidak valid/placeholder (dikecualikan di model agregasi, bukan di sini,
--- supaya model ini tetap representasi 1:1 dari data mentah).
--- CATATAN: effectiveDateTime dari FHIR berformat ISO 8601 LENGKAP dengan jam & timezone offset
--- (mis. '2026-07-03T09:09:00+07:00'), BUKAN cuma tanggal. toDate() ClickHouse tidak bisa parse
--- string seperti ini langsung (cuma nerima 'YYYY-MM-DD') -- makanya di-parse dulu lewat
--- parseDateTimeBestEffortOrNull() (yang paham berbagai format ISO 8601 + timezone), baru dibungkus
--- toDate().
--- PENTING: parseDateTimeBestEffortOrNull() menghasilkan Nullable(DateTime) -- kalau dibiarkan
--- begitu saja, tanggal_periksa jadi Nullable(Date), dan ClickHouse MENOLAK kolom Nullable
--- dipakai sebagai sorting key (order_by) tabel MergeTree/ReplacingMergeTree (error "Sorting key
--- contains nullable columns"). Makanya dibungkus coalesce(...) dengan fallback epoch
--- ('1970-01-01', konsisten dengan konvensi res_deleted_at di seluruh project) supaya
--- HASIL AKHIRNYA tetap non-Nullable Date, tapi baris dengan effectiveDateTime kosong/rusak
--- tetap masuk (bukan bikin dbt run gagal) -- cuma tanggal_periksa-nya jadi '1970-01-01',
--- gampang di-filter/dikenali di layer chart kalau perlu.
--- CATATAN EDGE CASE (bukan error): toDate() pada DateTime hasil parse akan pakai timezone
--- server ClickHouse (default UTC) untuk menentukan tanggal kalender -- pengukuran jam 00:xx
--- WIB (+07:00) yang sebenarnya "hari X" bisa jadi tercatat sebagai "hari X-1" di UTC. Dampak
--- ke chart tren harian minimal (cuma di sekitar tengah malam), belum diperbaiki karena butuh
--- keputusan eksplisit timezone mana yang jadi acuan pelaporan (WIB vs UTC).
+-- Layer SILVER: hasil pengukuran (Observation) terekstrak dari JSON.
+-- INCREMENTAL -- baca ulang WAJIB FINAL. Watermark & delete: macros/cdc_incremental.sql.
+-- Nilai 0 pada nilai dianggap placeholder (dikecualikan di model agregasi, bukan di sini,
+-- supaya model ini tetap 1:1 dengan data mentah).
+-- loinc_code berisi Observation.code.coding[0].code apa pun sistemnya (LOINC, SNOMED, atau
+-- clinical-term Kemkes) -- nama kolom dipertahankan demi kompatibilitas dataset Superset;
+-- pakai code_system untuk membedakan.
+-- tanggal_periksa: effectiveDateTime dikonversi ke tanggal WIB. Fallback epoch supaya kolom
+-- tetap non-Nullable; baris '1970-01-01' = effectiveDateTime kosong/rusak.
+-- JANGAN tambah loinc_code ke order_by: ReplacingMergeTree dedup per seluruh kunci, jadi
+-- Observation yang kodenya dikoreksi akan meninggalkan baris lama yang tak pernah terhapus.
 SELECT
     r.res_id AS observation_id,
     r.res_updated,
-    toDate(coalesce(
-        parseDateTimeBestEffortOrNull(JSON_VALUE(v.res_text_vc, '$.effectiveDateTime')),
-        toDateTime64('1970-01-01 00:00:00', 6)
-    )) AS tanggal_periksa,
+    {{ fhir_date_wib("JSON_VALUE(v.res_text_vc, '$.effectiveDateTime')", "toDateTime64('1970-01-01 00:00:00', 6)") }} AS tanggal_periksa,
     JSON_VALUE(v.res_text_vc, '$.subject.reference') AS patient_ref,
     JSON_VALUE(v.res_text_vc, '$.encounter.reference') AS encounter_ref,
+    JSON_VALUE(v.res_text_vc, '$.code.coding[0].system') AS code_system,
     JSON_VALUE(v.res_text_vc, '$.code.coding[0].code') AS loinc_code,
     JSON_VALUE(v.res_text_vc, '$.code.coding[0].display') AS nama_pengukuran,
     toFloat64OrNull(JSON_VALUE(v.res_text_vc, '$.valueQuantity.value')) AS nilai,
-    JSON_VALUE(v.res_text_vc, '$.valueQuantity.unit') AS satuan
+    JSON_VALUE(v.res_text_vc, '$.valueQuantity.unit') AS satuan,
+    JSON_VALUE(v.res_text_vc, '$.interpretation[0].coding[0].code') AS interpretasi_code,
+    {{ cdc_is_deleted('r') }},
+    {{ cdc_synced_at(['r', 'v']) }}
 FROM {{ source('fhirhapi_prod', 'hfj_resource') }} AS r FINAL
-JOIN {{ source('fhirhapi_prod', 'hfj_res_ver') }} AS v FINAL
+LEFT JOIN {{ source('fhirhapi_prod', 'hfj_res_ver') }} AS v FINAL
     ON r.res_id = v.res_id AND r.res_ver = v.res_ver
-WHERE r._peerdb_is_deleted = 0
-    AND v._peerdb_is_deleted = 0
-    AND r.res_type = 'Observation'
-    AND r.res_deleted_at = toDateTime64('1970-01-01 00:00:00', 6)
-{% if is_incremental() %}
-    AND r.res_updated > (SELECT max(res_updated) FROM {{ this }})
-{% endif %}
+WHERE {{ cdc_res_type_filter('Observation', 'observation_id') }}
+    AND (v.res_id != 0 OR is_deleted = 1)
+    {{ cdc_changed_res_ids('Observation') }}

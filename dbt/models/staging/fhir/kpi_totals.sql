@@ -21,9 +21,13 @@ WITH resource_summary AS (
     FROM {{ ref('resource') }} FINAL
 ),
 condition_summary AS (
+    -- kasus_* = jumlah Condition (satu pasien bisa >1), pasien_* = jumlah pasien unik.
+    -- kasus_* dipertahankan supaya chart lama tidak rusak; label KPI sebaiknya pakai pasien_*.
     SELECT
         countIf(kategori_ptm = 'Hipertensi') AS kasus_hipertensi,
-        countIf(kategori_ptm = 'Diabetes Melitus') AS kasus_diabetes
+        countIf(kategori_ptm = 'Diabetes Melitus') AS kasus_diabetes,
+        uniqExactIf(patient_ref, kategori_ptm = 'Hipertensi') AS pasien_hipertensi,
+        uniqExactIf(patient_ref, kategori_ptm = 'Diabetes Melitus') AS pasien_diabetes
     FROM {{ ref('conditions') }} FINAL
 ),
 faskes_summary AS (
@@ -47,6 +51,8 @@ SELECT
     fk.puskesmas_aktif,
     cs.kasus_hipertensi,
     cs.kasus_diabetes,
+    cs.pasien_hipertensi,
+    cs.pasien_diabetes,
     fr.data_terakhir_diperbarui
 FROM resource_summary AS rs
 CROSS JOIN condition_summary AS cs

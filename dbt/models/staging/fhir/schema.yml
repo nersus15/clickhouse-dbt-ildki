@@ -28,11 +28,24 @@ models:
   - name: organizations
     description: "Daftar Puskesmas/faskes (Organization) dengan nama bersih"
   - name: encounters
-    description: "Kunjungan (Encounter) dengan status & kelas layanan terekstrak dari JSON"
+    description: "Kunjungan (Encounter) dengan status, kelas layanan & tanggal pelayanan (period.start, WIB)"
+    columns:
+      - name: encounter_id
+        tests: [not_null]
   - name: conditions
     description: "Diagnosis (Condition) dengan kode & nama ICD-10 terekstrak dari JSON"
+    columns:
+      - name: condition_id
+        tests: [not_null]
+      - name: kategori_ptm
+        tests:
+          - accepted_values:
+              values: ['Hipertensi', 'Diabetes Melitus', 'Stunting', 'Lainnya']
   - name: observations
-    description: "Hasil pengukuran vital sign (Observation) terekstrak dari JSON"
+    description: "Hasil pengukuran (Observation) terekstrak dari JSON; loinc_code = Observation.code apa pun sistemnya (lihat code_system)"
+    columns:
+      - name: observation_id
+        tests: [not_null]
   - name: careplans
     description: "Rencana perawatan (CarePlan) dengan kategori & status terekstrak dari JSON"
   - name: res_link
@@ -56,11 +69,18 @@ models:
   - name: encounter_trend_per_faskes
     description: "Chart: Tren Pengiriman Data Kunjungan (Encounter) per Puskesmas"
   - name: deteksi_dini_hipertensi
-    description: "Chart: Deteksi Dini Risiko Hipertensi (Observasi vs Diagnosis Formal)"
+    description: "Chart: Deteksi Dini Risiko Hipertensi (Observasi vs Diagnosis Formal) -- satu pasien satu kategori, dari pemeriksaan tensi terakhir"
+    columns:
+      - name: kategori_tensi
+        tests:
+          - accepted_values:
+              values: ['Hipertensi (>=140/90)', 'Waspada/Pra-Hipertensi (>=130/85)', 'Normal']
   - name: tren_tensi_harian
     description: "Chart: Tren Rata-rata Tekanan Darah Harian (Sistol/Diastol)"
   - name: weight_faltering_per_faskes
-    description: "Chart: Tren Kasus Weight Faltering (Risiko Stunting) per Puskesmas"
+    description: "Monitoring kualitas data: CarePlan CP000001 (tatalaksana weight faltering) per Puskesmas -- BUKAN indikator stunting"
+  - name: stunting_per_faskes
+    description: "Chart: Kasus Stunting per Puskesmas per bulan -- diagnosis ICD-10 E45 (+ z-score TB/U bila var kode_zscore_tbu diisi)"
   - name: resource_type_summary
     description: "Chart: Distribusi Resource FHIR per Tipe (ARSIP -- referensi teknis, tidak ditampilkan di dashboard kebijakan utama)"
   - name: clinical_status_summary

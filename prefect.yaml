@@ -13,8 +13,8 @@ deployments:
   parameters:
     select: "resource res_link organizations patients encounters conditions observations careplans"
   schedule:
-    # Sebelumnya "* * * * *" -- penyebab utama OOM.
-    cron: "*/1 * * * *"
+    # Sebelumnya "* * * * *" / "*/1 * * * *" (identik: tiap menit) -- penyebab utama OOM.
+    cron: "*/5 * * * *"
     timezone: "Asia/Jakarta"
   work_pool:
     name: ildki-dbt-pool  # Harus sama dengan pool yang dibuat di Prefect UI

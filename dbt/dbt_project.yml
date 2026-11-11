@@ -28,22 +28,19 @@ clean-targets:
 # cukup jelas dari nama modelnya sendiri (mis. "conditions", "top_diagnosis").
 #
 # Materialized TIDAK di-set di level folder di sini, tapi eksplisit per-model lewat config()
-# di tiap file .sql (opsi C -- lihat readme.md):
-# - Model ekstraksi (mis. resource, conditions, observations) -> materialized='incremental'
-#   (dedup FINAL + ekstraksi JSON dihitung sekali saat dbt run, bukan tiap kali chart dibuka)
+# di tiap file .sql (lihat readme.md):
+# - Model ekstraksi (resource, res_link, organizations, patients, encounters, conditions,
+#   observations, careplans) -> materialized='incremental', append + ReplacingMergeTree.
+#   Watermark _peerdb_synced_at + penanganan delete ada di macros/cdc_incremental.sql.
 # - Model agregasi/join untuk chart (mis. top_diagnosis, kpi_totals) -> materialized='view'
 #   (murah karena sumbernya sudah berupa table bersih, bukan bronze mentah)
 #
 # SIAPA MENJALANKAN APA:
 # - K8s Job sekali jalan (~/project/ildki/platform/system/data/dbt/kjob):
-#   `dbt build` penuh -- deploy objek DDL (view/MV/dictionary) + seeding incremental.
-#   Dijalankan ulang hanya saat SQL berubah.
-# - Prefect tiap 5 menit (ildki-dbt-clickhouse-incremental):
-#   `dbt run --select encounters conditions observations careplans`.
-#   Tanpa suffix '+', supaya model MV tidak ikut ter-drop-recreate.
-#
-# Sudah tidak ada model 'table': patients dipecah jadi ekstraksi incremental
-# (patients) + view (pasien_belum_kunjungan), supaya tidak lagi baca bronze mentah.
+#   `dbt build` penuh -- deploy view + seeding incremental. Dijalankan ulang hanya saat SQL berubah.
+# - Prefect tiap 5 menit (ildki-dbt-clickhouse-incremental, prefect.yaml):
+#   `dbt run --select <8 model incremental>`. Tanpa suffix '+', supaya view tidak ikut
+#   ter-drop-recreate tiap run.
 #
 # Belum dikerjakan:
 # - resource, res_link, patients -> materialized_view
@@ -54,5 +51,14 @@ clean-targets:
 # Layer GOLD BELUM dipakai: rencananya gold baru dibuat nanti saat sudah perlu menggabungkan
 # data dari lebih dari satu source aplikasi (mis. FHIR + Jaksimpus dkk). Macro
 # macros/generate_schema_name.sql sudah disiapkan untuk saat itu tiba.
+vars:
+  # Kode Observation.code (system http://terminology.kemkes.go.id/CodeSystem/clinical-term)
+  # untuk z-score Panjang/Tinggi Badan per Usia (PB/U, TB/U), dipakai stunting_per_faskes.
+  # KOSONG = cabang z-score dimatikan. Per 2026-11-11 belum ada Observation z-score di data,
+  # dan kode resminya diubah di Playbook SATUSEHAT Gizi v3.2 (8 Mei 2024) -- verifikasi dulu
+  # ke https://satusehat.kemkes.go.id/platform/docs/id/interoperability/gizi/ sebelum diisi,
+  # mis. ['OC000006', 'OC000007'].
+  kode_zscore_tbu: []
+
 models:
   ildki_transformations_ch: {}

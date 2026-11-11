@@ -2,26 +2,28 @@
     materialized='incremental',
     incremental_strategy='append',
     alias='resource',
-    engine="ReplacingMergeTree(res_updated)",
-    order_by=['res_type', 'res_id']
+    engine="ReplacingMergeTree(_synced_at)",
+    order_by=['res_id']
 ) }}
 
 -- Layer SILVER: metadata resource FHIR yang sudah dibersihkan.
--- INCREMENTAL (append + ReplacingMergeTree): tiap dbt run cuma ambil baris dengan res_updated
--- lebih baru dari watermark terakhir, lalu APPEND (bukan rebuild total). Versi duplikat (res_id
--- sama) di-dedup oleh ReplacingMergeTree(res_updated) -- menang yang res_updated lebih besar.
--- Konsekuensi: SEMUA query pembaca tabel ini WAJIB pakai FINAL (lihat model-model agregasi).
--- FINAL di FROM tetap dipakai untuk baca bronze (StarRocks/ClickHouse ReplacingMergeTree bawaan CDC PeerDB).
--- res_deleted_at di ClickHouse tidak Nullable -- nilai '1970-01-01 00:00:00' (epoch) berarti belum dihapus.
+-- INCREMENTAL (append + ReplacingMergeTree): versi duplikat (res_id sama) di-dedup oleh
+-- ReplacingMergeTree(_synced_at). SEMUA query pembaca tabel ini WAJIB pakai FINAL.
+-- order_by cuma res_id: baris hard delete PeerDB bisa saja cuma berisi PK (res_type kosong),
+-- jadi kunci dedup tidak boleh memuat kolom selain PK. Resource yang di-expunge dengan
+-- cara itu akan muncul dengan res_type '' di resource_type_summary.
+-- Beda dari model ekstraksi lain: is_deleted SENGAJA bukan parameter engine, karena
+-- resource_type_summary & kpi_totals justru perlu menghitung resource yang dihapus.
+-- Watermark: macros/cdc_incremental.sql.
 SELECT
     res_id,
     res_type,
     res_ver,
     res_published,
     res_updated,
-    (res_deleted_at != toDateTime64('1970-01-01 00:00:00', 6)) AS is_deleted
+    (res_deleted_at != toDateTime64('1970-01-01 00:00:00', 6) OR _peerdb_is_deleted = 1) AS is_deleted,
+    {{ cdc_synced_at(['r']) }}
 FROM {{ source('fhirhapi_prod', 'hfj_resource') }} AS r FINAL
-WHERE _peerdb_is_deleted = 0
 {% if is_incremental() %}
-  AND r.res_updated > (SELECT max(res_updated) FROM {{ this }})
+WHERE r._peerdb_synced_at > {{ cdc_watermark() }}
 {% endif %}
