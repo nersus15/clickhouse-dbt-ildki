@@ -24,6 +24,8 @@
 
 {% set kode_tbu = var('kode_zscore_tbu', []) %}
 
+-- Kolom hasil JOIN di CTE WAJIB diberi alias eksplisit: tanpa alias ClickHouse menamai
+-- kolomnya lengkap dengan prefix (mis. `c.patient_ref`), tidak terbaca di CTE berikutnya.
 WITH encounter_org AS (
     SELECT src_resource_id AS encounter_id, target_resource_id AS organization_id
     FROM {{ ref('res_link') }} FINAL
@@ -33,8 +35,8 @@ WITH encounter_org AS (
 kejadian AS (
     SELECT
         e.tanggal_kunjungan AS tanggal,
-        eo.organization_id,
-        c.patient_ref,
+        eo.organization_id AS organization_id,
+        c.patient_ref AS patient_ref,
         1 AS dari_diagnosis,
         CAST(NULL AS Nullable(Float64)) AS z
     FROM {{ ref('conditions') }} AS c FINAL
@@ -50,8 +52,8 @@ kejadian AS (
 
     SELECT
         o.tanggal_periksa AS tanggal,
-        eo.organization_id,
-        o.patient_ref,
+        eo.organization_id AS organization_id,
+        o.patient_ref AS patient_ref,
         0 AS dari_diagnosis,
         CAST(o.nilai AS Nullable(Float64)) AS z
     FROM {{ ref('observations') }} AS o FINAL
